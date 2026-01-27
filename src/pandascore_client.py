@@ -9,7 +9,7 @@ Implements rate limiting, retry logic, and error handling.
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any, Union, Tuple
 
 import aiohttp
 from aiohttp import ClientError, ClientResponseError, ClientTimeout
@@ -347,47 +347,26 @@ class PandaScoreClient:
 
         return params
 
-    async def fetch_matches(
-        self, kind: str, options: Optional[Dict[str, Any]] = None
-    ) -> List[JSONType]:
-        """Unified fetch entrypoint for different match types.
+    def _prepare_fetch_context(
+        self, kind: str, opts: Dict[str, Any], desc_template: str
+    ) -> Tuple[Dict[str, Any], str]:
+        """Prepare params and description for fetch request.
 
-        `kind` may be one of: "upcoming", "recent_past", "past", "running".
-        This consolidates parameter construction and endpoint selection to
-        avoid duplicated code across the specific fetch helpers.
+        Handles the different parameter structures for running vs other
+        matches.
         """
-        opts = options or {}
-        k = (kind or "").lower()
-
-        # Endpoint selection mapping; `opts` now provides pagination/filtering
-        mapping = {
-            "upcoming": (
-                "/lol/matches/upcoming",
-                "upcoming matches (page {page})",
-            ),
-            "recent_past": ("/lol/matches/past", "recent past matches"),
-            "past": ("/lol/matches/past", "past matches"),
-            "running": ("/lol/matches/running", "running matches"),
-        }
-
-        entry = mapping.get(k)
-        if not entry:
-            raise ValueError(f"Unknown match fetch kind: {kind}")
-
-        endpoint, desc_template = entry
-
-        # For running we expect a simple page param; include both page
-        # size and page number so pagination works as callers expect.
-        if k == "running":
+        if kind == "running":
             params = {
                 "page[size]": opts.get("page_size", DEFAULT_PAGE_SIZE),
                 "page[number]": opts.get("page", 1),
             }
             description = desc_template
         else:
+            sort = opts.get("sort") or (
+                "scheduled_at" if kind == "upcoming" else "-scheduled_at"
+            )
             build_opts = {
-                "sort": opts.get("sort")
-                or ("scheduled_at" if k == "upcoming" else "-scheduled_at"),
+                "sort": sort,
                 "page_size": opts.get("page_size", DEFAULT_PAGE_SIZE),
                 "page": opts.get("page"),
                 "filter_key": opts.get("filter_key"),
@@ -395,6 +374,44 @@ class PandaScoreClient:
             }
             params = self._build_params(build_opts)
             description = desc_template.format(page=opts.get("page", 1))
+        return params, description
+
+    async def fetch_matches(
+        self,
+        kind: str,
+        options: Optional[Dict[str, Any]] = None,
+        game: str = "lol",
+    ) -> List[JSONType]:
+        """Unified fetch entrypoint for different match types.
+
+        `kind` may be one of: "upcoming", "recent_past", "past", "running".
+        `game` specifies the game title (e.g., "lol", "dota2", "csgo").
+        This consolidates parameter construction and endpoint selection to
+        avoid duplicated code across the specific fetch helpers.
+        """
+        opts = options or {}
+        k = (kind or "").lower()
+        g = (game or "lol").lower()
+
+        # Endpoint selection mapping
+        mapping = {
+            "upcoming": (
+                f"/{g}/matches/upcoming",
+                f"upcoming {g} matches (page {{page}})",
+            ),
+            "recent_past": (f"/{g}/matches/past", f"recent past {g} matches"),
+            "past": (f"/{g}/matches/past", f"past {g} matches"),
+            "running": (f"/{g}/matches/running", f"running {g} matches"),
+        }
+
+        entry = mapping.get(k)
+        if not entry:
+            raise ValueError(f"Unknown match fetch kind: {kind}")
+
+        endpoint, desc_template = entry
+        params, description = self._prepare_fetch_context(
+            k, opts, desc_template
+        )
 
         return await self._fetch_matches(endpoint, params, description)
 
@@ -403,14 +420,16 @@ class PandaScoreClient:
         league_ids: Optional[List[int]] = None,
         page_size: int = DEFAULT_PAGE_SIZE,
         page: int = 1,
+        game: str = "lol",
     ) -> List[JSONType]:
         """
-        Fetch upcoming League of Legends matches.
+        Fetch upcoming matches.
 
         Args:
             league_ids: Optional list of league IDs to filter by
             page_size: Number of results per page (max 100)
             page: Page number for pagination
+            game: Game slug (default: "lol")
 
         Returns:
             List of match objects from PandaScore
@@ -423,10 +442,14 @@ class PandaScoreClient:
                 "page_size": page_size,
                 "page": page,
             },
+            game=game,
         )
 
     async def fetch_running_matches(
-        self, page_size: int = DEFAULT_PAGE_SIZE, page: int = 1
+        self,
+        page_size: int = DEFAULT_PAGE_SIZE,
+        page: int = 1,
+        game: str = "lol",
     ) -> List[JSONType]:
         """
         Backwards-compatible helper to fetch running matches.
@@ -437,12 +460,14 @@ class PandaScoreClient:
         return await self.fetch_matches(
             "running",
             {"page_size": page_size, "page": page},
+            game=game,
         )
 
     async def fetch_all_upcoming_matches(
         self,
         league_ids: Optional[List[int]] = None,
         max_pages: int = 5,
+        game: str = "lol",
     ) -> List[JSONType]:
         """
         Fetch all upcoming matches across multiple pages.
@@ -450,6 +475,7 @@ class PandaScoreClient:
         Args:
             league_ids: Optional list of league IDs to filter by
             max_pages: Maximum number of pages to fetch
+            game: Game slug (default: "lol")
 
         Returns:
             Combined list of all match objects
@@ -468,6 +494,7 @@ class PandaScoreClient:
                     "page_size": MAX_PAGE_SIZE,
                     "page": p,
                 },
+                game=game,
             )
             if not matches:
                 break
@@ -478,18 +505,21 @@ class PandaScoreClient:
         logger.info("Fetched total of %d upcoming matches", len(all_matches))
         return all_matches
 
-    async def fetch_match_by_id(self, match_id: int) -> Optional[JSONType]:
+    async def fetch_match_by_id(
+        self, match_id: int, game: str = "lol"
+    ) -> Optional[JSONType]:
         """
         Fetch a specific match by its PandaScore ID.
 
         Args:
             match_id: PandaScore match ID
+            game: Game slug (default: "lol")
 
         Returns:
             Match object or None if not found
         """
         try:
-            result = await self._make_request(f"/lol/matches/{match_id}")
+            result = await self._make_request(f"/{game}/matches/{match_id}")
             logger.debug(
                 "Fetched match %d: status=%s", match_id, result.get("status")
             )
@@ -535,7 +565,10 @@ class DisabledPandaScoreClient:
 
     # skipcq: PYL-R0201
     async def fetch_matches(
-        self, kind: str, options: Optional[Dict[str, Any]] = None
+        self,
+        kind: str,
+        options: Optional[Dict[str, Any]] = None,
+        game: str = "lol",
     ) -> List[JSONType]:
         return []
 
@@ -545,23 +578,32 @@ class DisabledPandaScoreClient:
         league_ids: Optional[List[int]] = None,
         page_size: int = DEFAULT_PAGE_SIZE,
         page: int = 1,
+        game: str = "lol",
     ) -> List[JSONType]:
         return []
 
     # skipcq: PYL-R0201
     async def fetch_running_matches(
-        self, page_size: int = DEFAULT_PAGE_SIZE, page: int = 1
+        self,
+        page_size: int = DEFAULT_PAGE_SIZE,
+        page: int = 1,
+        game: str = "lol",
     ) -> List[JSONType]:
         return []
 
     # skipcq: PYL-R0201
     async def fetch_all_upcoming_matches(
-        self, league_ids: Optional[List[int]] = None, max_pages: int = 5
+        self,
+        league_ids: Optional[List[int]] = None,
+        max_pages: int = 5,
+        game: str = "lol",
     ) -> List[JSONType]:
         return []
 
     # skipcq: PYL-R0201
-    async def fetch_match_by_id(self, match_id: int) -> Optional[JSONType]:
+    async def fetch_match_by_id(
+        self, match_id: int, game: str = "lol"
+    ) -> Optional[JSONType]:
         return None
 
     # skipcq: PYL-R0201

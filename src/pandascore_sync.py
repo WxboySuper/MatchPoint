@@ -34,6 +34,7 @@ from src.pandascore_processing import (
     _process_single_match,
     _detect_match_result,
 )
+from src.parsers.lol import LoLParser
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,7 @@ async def _fetch_matches_for_sync(league_ids: Optional[List[int]]):
     Returns combined list or None on failure.
     """
     try:
+        game_slug = "lol"
         upcoming_coro = pandascore_client.fetch_matches(
             "upcoming",
             {
@@ -110,9 +112,12 @@ async def _fetch_matches_for_sync(league_ids: Optional[List[int]]):
                 "page_size": MAX_PAGE_SIZE,
                 "page": 1,
             },
+            game=game_slug,
         )
         running_coro = pandascore_client.fetch_matches(
-            "running", {"page_size": DEFAULT_PAGE_SIZE}
+            "running",
+            {"page_size": DEFAULT_PAGE_SIZE},
+            game=game_slug,
         )
         past_coro = pandascore_client.fetch_matches(
             "recent_past",
@@ -121,6 +126,7 @@ async def _fetch_matches_for_sync(league_ids: Optional[List[int]]):
                 "filter_values": league_ids,
                 "page_size": DEFAULT_PAGE_SIZE,
             },
+            game=game_slug,
         )
 
         upcoming, running, past = await asyncio.gather(
@@ -146,7 +152,12 @@ async def _process_matches_and_commit(
     and summary.
     """
     summary = {"contests": 0, "matches": 0, "teams": 0}
-    ctx = PandaScoreSyncContext(db_session=db_session, summary=summary)
+    # Initialize the parser here.
+    # Future enhancement: allow passing parser from caller.
+    parser = LoLParser()
+    ctx = PandaScoreSyncContext(
+        db_session=db_session, summary=summary, parser=parser
+    )
 
     for i, match_data in enumerate(matches_data):
         try:
@@ -224,7 +235,9 @@ async def sync_running_matches() -> Dict[str, Any]:
     logger.info("Syncing running matches from PandaScore...")
 
     try:
-        running_matches = await pandascore_client.fetch_running_matches()
+        running_matches = await pandascore_client.fetch_running_matches(
+            game="lol"
+        )
     except Exception:
         logger.exception("Failed to fetch running matches")
         return {"started": [], "finished": [], "error": True}
@@ -288,6 +301,7 @@ async def fetch_and_update_match_result(pandascore_id: int) -> bool:
         ctx = PandaScoreSyncContext(
             db_session=db_session,
             summary={"contests": 0, "matches": 0, "teams": 0},
+            parser=LoLParser(),
         )
 
         await _detect_match_result(match_data, match, ctx)
@@ -307,7 +321,9 @@ async def _fetch_pandascore_match(
     pandascore_id: int,
 ) -> Optional[Dict[str, Any]]:
     try:
-        match_data = await pandascore_client.fetch_match_by_id(pandascore_id)
+        match_data = await pandascore_client.fetch_match_by_id(
+            pandascore_id, game="lol"
+        )
     except Exception:
         logger.exception("Failed to fetch match %s", pandascore_id)
         return None

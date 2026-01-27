@@ -19,12 +19,7 @@ from src.crud import (
     upsert_match_by_pandascore,
 )
 from src.match_result_utils import save_result_and_update_picks
-from src.pandascore_parsing import (
-    _extract_team_data,
-    _extract_contest_data,
-    _extract_match_data,
-    _extract_winner_and_scores,
-)
+from src.parsers.base import PandaScoreParser
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +28,7 @@ logger = logging.getLogger(__name__)
 class PandaScoreSyncContext:
     db_session: Any
     summary: Dict[str, int]
+    parser: PandaScoreParser
     matches_to_schedule: List[Any] = field(default_factory=list)
     notifications: List[Tuple[int, int]] = field(default_factory=list)
     time_change_notifications: List[Tuple[Any, datetime, datetime]] = field(
@@ -46,7 +42,7 @@ async def _process_teams_from_match(
     opponents = match_data.get("opponents", [])
 
     for opponent in opponents:
-        team_data = _extract_team_data(opponent)
+        team_data = ctx.parser.extract_team_data(opponent)
         if team_data and team_data.get("pandascore_id"):
             team = await upsert_team_by_pandascore(ctx.db_session, team_data)
             if team:
@@ -56,7 +52,7 @@ async def _process_teams_from_match(
 async def _get_or_create_contest(
     match_data: Dict[str, Any], ctx: PandaScoreSyncContext
 ) -> Optional[Any]:
-    contest_data = _extract_contest_data(match_data)
+    contest_data = ctx.parser.extract_contest_data(match_data)
 
     if not contest_data.get("pandascore_league_id") or not contest_data.get(
         "pandascore_serie_id"
@@ -93,7 +89,7 @@ async def _process_single_match(
 
     await _process_teams_from_match(match_data, ctx)
 
-    match_info = _extract_match_data(match_data, contest.id)
+    match_info = ctx.parser.extract_match_data(match_data, contest.id)
     if not match_info:
         return None
 
@@ -134,8 +130,8 @@ async def _detect_match_result(
     if not winner_id:
         return
 
-    winner_name, team1_score, team2_score = _extract_winner_and_scores(
-        match_data, match, winner_id
+    winner_name, team1_score, team2_score = (
+        ctx.parser.extract_winner_and_scores(match_data, match, winner_id)
     )
 
     if not winner_name:

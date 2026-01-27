@@ -70,14 +70,18 @@ class TestPandaScoreClient:
         return match
 
 
-class TestPandaScoreSyncHelpers:
-    """Tests for sync helper functions."""
+class TestPandaScoreParser:
+    """Tests for PandaScoreParser class."""
 
-    def test_parse_pandascore_date_valid(self):
+    @pytest.fixture
+    def parser(self):
+        from src.parsers.base import PandaScoreParser
+
+        return PandaScoreParser()
+
+    def test_parse_date_valid(self, parser):
         """Test parsing a valid ISO 8601 date."""
-        from src.pandascore_parsing import _parse_pandascore_date
-
-        result = _parse_pandascore_date("2024-03-15T10:00:00Z")
+        result = parser.parse_date("2024-03-15T10:00:00Z")
         assert result is not None
         assert result.year == 2024
         assert result.month == 3
@@ -85,24 +89,18 @@ class TestPandaScoreSyncHelpers:
         assert result.hour == 10
         assert result.tzinfo is not None
 
-    def test_parse_pandascore_date_none(self):
+    def test_parse_date_none(self, parser):
         """Test parsing None returns None."""
-        from src.pandascore_parsing import _parse_pandascore_date
-
-        result = _parse_pandascore_date(None)
+        result = parser.parse_date(None)
         assert result is None
 
-    def test_parse_pandascore_date_invalid(self):
+    def test_parse_date_invalid(self, parser):
         """Test parsing invalid date returns None."""
-        from src.pandascore_parsing import _parse_pandascore_date
-
-        result = _parse_pandascore_date("not-a-date")
+        result = parser.parse_date("not-a-date")
         assert result is None
 
-    def test_extract_team_data_valid(self):
+    def test_extract_team_data_valid(self, parser):
         """Test extracting team data from opponent object."""
-        from src.pandascore_parsing import _extract_team_data
-
         opponent = {
             "opponent": {
                 "id": 100,
@@ -112,23 +110,19 @@ class TestPandaScoreSyncHelpers:
             }
         }
 
-        result = _extract_team_data(opponent)
+        result = parser.extract_team_data(opponent)
         assert result is not None
         assert result["pandascore_id"] == 100
         assert result["name"] == "Team A"
         assert result["acronym"] == "TA"
 
-    def test_extract_team_data_missing_opponent(self):
+    def test_extract_team_data_missing_opponent(self, parser):
         """Test extracting team data with missing opponent key."""
-        from src.pandascore_parsing import _extract_team_data
-
-        result = _extract_team_data({})
+        result = parser.extract_team_data({})
         assert result is None
 
-    def test_extract_contest_data(self):
+    def test_extract_contest_data(self, parser):
         """Test extracting contest data from match."""
-        from src.pandascore_parsing import _extract_contest_data
-
         match_data = {
             "league": {"id": 1, "name": "LCS", "image_url": "http://img"},
             "serie": {
@@ -139,17 +133,15 @@ class TestPandaScoreSyncHelpers:
             "scheduled_at": "2024-03-15T10:00:00Z",
         }
 
-        result = _extract_contest_data(match_data)
+        result = parser.extract_contest_data(match_data)
         assert result["pandascore_league_id"] == 1
         assert result["pandascore_serie_id"] == 10
         assert "LCS" in result["name"]
         assert "Spring" in result["name"]
         assert result["image_url"] == "http://img"
 
-    def test_extract_match_data_valid(self):
+    def test_extract_match_data_valid(self, parser):
         """Test extracting match data from PandaScore match object."""
-        from src.pandascore_parsing import _extract_match_data
-
         match_data = {
             "id": 123456,
             "scheduled_at": "2024-03-15T10:00:00Z",
@@ -161,7 +153,7 @@ class TestPandaScoreSyncHelpers:
             ],
         }
 
-        result = _extract_match_data(match_data, contest_id=1)
+        result = parser.extract_match_data(match_data, contest_id=1)
         assert result is not None
         assert result["pandascore_id"] == 123456
         assert result["team1"] == "Team A"
@@ -170,17 +162,15 @@ class TestPandaScoreSyncHelpers:
         assert result["team2_id"] == 200
         assert result["best_of"] == 3
 
-    def test_extract_match_data_missing_opponents(self):
+    def test_extract_match_data_missing_opponents(self, parser):
         """Test extracting match data with fewer than 2 opponents."""
-        from src.pandascore_parsing import _extract_match_data
-
         match_data = {
             "id": 123456,
             "scheduled_at": "2024-03-15T10:00:00Z",
             "opponents": [{"opponent": {"id": 100, "name": "Team A"}}],
         }
 
-        result = _extract_match_data(match_data, contest_id=1)
+        result = parser.extract_match_data(match_data, contest_id=1)
         assert result is not None
         assert result["pandascore_id"] == 123456
         assert result["team1"] == "Team A"
