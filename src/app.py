@@ -34,6 +34,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
 intents = discord.Intents.default()
 intents.members = True
+intents.message_content = True  # Required for prefix commands
 
 
 class EsportsBot(commands.Bot):
@@ -43,6 +44,7 @@ class EsportsBot(commands.Bot):
         "contest",
         "matches",
         "pick",
+        "pick_text",  # Text-based prefix commands for agent accessibility
         "picks",
         "stats",
         "leaderboard",
