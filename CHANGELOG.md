@@ -8,14 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [v1.2] - 2026-02-01
 
 ### Added
+- **REST API:** Embedded FastAPI server for programmatic access:
+  - `GET /api/matches` - List available matches for picking
+  - `POST /api/picks` - Submit or update a pick
+  - `GET /api/picks/{user_id}` - Get user's picks
+  - `GET /api/health` - Health check endpoint
+  - API docs at `/api/docs` (Swagger) and `/api/redoc`
 - **Text-Based Pick Commands:** New prefix commands for agent/bot accessibility:
   - `!pick list` - Show available matches with IDs
   - `!pick <match_id> <team>` - Submit or update a pick
   - `!picks` - View your current picks
 - **Message Content Intent:** Enabled for prefix command parsing.
 
+### Configuration
+- `MATCHPOINT_API_KEY` - Required for API authentication
+- `MATCHPOINT_API_PORT` - API server port (default: 8420)
+- `MATCHPOINT_API_HOST` - API server host (default: 0.0.0.0)
+
 ### Why
-- Enables AI agents (like Nimbus) to interact with MatchPoint without requiring Discord interaction tokens that only work with slash commands.
+- Enables AI agents and external services to interact with MatchPoint without requiring Discord interaction tokens.
 
 ## [v1.1] - 2026-01-24
 

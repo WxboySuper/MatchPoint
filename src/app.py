@@ -20,6 +20,7 @@ from src.scheduler import start_scheduler
 from src.bot_instance import set_bot_instance
 import aiohttp
 from src.db import init_db
+from src.api.server import api_server
 
 # Initialize logging as early as possible
 setup_logging()
@@ -87,11 +88,17 @@ class EsportsBot(commands.Bot):
         if commands_pkg is not None:
             await self._load_command_modules(commands_pkg)
         await self._sync_global_commands()
+        # Start the REST API server
+        logger.info("Starting API server...")
+        await api_server.start()
         logger.info("setup_hook complete.")
 
     async def close(self):
-        """Properly close the HTTP session and the bot."""
+        """Properly close the HTTP session, API server, and the bot."""
         from src.pandascore_client import pandascore_client
+
+        # Stop API server
+        await api_server.stop()
 
         if self.session:
             await self.session.close()
