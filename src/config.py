@@ -48,6 +48,16 @@ def _parse_feature_flags(env_val: str | None) -> dict:
     try:
         user_flags = json.loads(env_val)
         if isinstance(user_flags, dict):
+            # Validate types for known flags
+            for k, v in user_flags.items():
+                if k in default_flags and isinstance(default_flags[k], bool):
+                    # Coerce strings 'true'/'false' to bool
+                    if isinstance(v, str):
+                        user_flags[k] = v.lower() == "true"
+                    elif not isinstance(v, bool):
+                        # Force other types (int 0/1) to bool
+                        user_flags[k] = bool(v)
+            
             default_flags.update(user_flags)
             return default_flags
     except json.JSONDecodeError:
