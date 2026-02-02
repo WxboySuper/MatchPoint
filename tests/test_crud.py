@@ -412,7 +412,7 @@ def test_get_user_picks_for_matches(session: Session):
                 team2=f"T{i}B",
                 scheduled_time=base_time,
                 leaguepedia_id=f"m-test-subset-{i}",
-            )
+            ),
         )
         matches.append(m)
 
@@ -425,7 +425,7 @@ def test_get_user_picks_for_matches(session: Session):
                 contest_id=contest.id,
                 match_id=matches[i].id,
                 chosen_team=f"T{i}A",
-            )
+            ),
         )
 
     # Query for match 0 and 1
