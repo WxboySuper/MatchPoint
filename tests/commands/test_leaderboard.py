@@ -31,7 +31,7 @@ async def test_leaderboard_command_initial_call(
     """Test the initial call to the /leaderboard command."""
     # Arrange
     mock_get_data.return_value = [("user1", 100)]
-    mock_embed = discord.Embed(title="Global Leaderboard")
+    mock_embed = discord.Embed(title="Global 🌎 Leaderboard")
     mock_create_embed.return_value = mock_embed
 
     # Act
@@ -42,7 +42,7 @@ async def test_leaderboard_command_initial_call(
         mock_get_session.return_value.__enter__.return_value
     )
     mock_create_embed.assert_called_once_with(
-        "Global Leaderboard", [("user1", 100)], mock_interaction
+        "Global 🌎 Leaderboard", [("user1", 100)], mock_interaction
     )
     mock_interaction.response.send_message.assert_called_once()
 
@@ -67,23 +67,23 @@ async def test_leaderboard_view_button_click(
     button_to_click = next(
         item
         for item in view.children
-        if isinstance(item, discord.ui.Button) and item.label == "Server"
+        if isinstance(item, discord.ui.Button) and item.label == "Server 🏘️"
     )
-    assert button_to_click.label == "Server"
+    assert button_to_click.label == "Server 🏘️"
 
     # Mock the return values for the update
     mock_get_data.return_value = [("user2", 200)]
-    mock_embed = discord.Embed(title="Server Leaderboard")
+    mock_embed = discord.Embed(title="Server 🏘️ Leaderboard")
     mock_create_embed.return_value = mock_embed
 
     # Act
-    await view.update_leaderboard(mock_interaction, "Server")
+    await view.update_leaderboard(mock_interaction, "Server 🏘️")
 
     # Assert
     # Check that button styles are updated correctly
     for item in view.children:
         if isinstance(item, discord.ui.Button):
-            if item.label == "Server":
+            if item.label == "Server 🏘️":
                 assert item.style == discord.ButtonStyle.primary
                 assert item.disabled is True
             else:
@@ -97,10 +97,36 @@ async def test_leaderboard_view_button_click(
         guild_id=mock_interaction.guild.id,
     )
     mock_create_embed.assert_called_with(
-        "Server Leaderboard", [("user2", 200)], mock_interaction
+        "Server 🏘️ Leaderboard", [("user2", 200)], mock_interaction
     )
     mock_interaction.edit_original_response.assert_called_once()
 
     args, kwargs = mock_interaction.edit_original_response.call_args
     assert kwargs["embed"] == mock_embed
     assert kwargs["view"] == view
+
+
+@pytest.mark.asyncio
+async def test_leaderboard_view_dm_context(mock_interaction):
+    """Test that the Server button is disabled in DM context (no guild)."""
+    # Arrange
+    mock_interaction.guild = None
+
+    # Act
+    view = LeaderboardView(mock_interaction)
+
+    # Assert
+    server_button = next(
+        item
+        for item in view.children
+        if isinstance(item, discord.ui.Button) and item.label == "Server 🏘️"
+    )
+    assert server_button.disabled is True
+
+    # Check other buttons are enabled
+    global_button = next(
+        item
+        for item in view.children
+        if isinstance(item, discord.ui.Button) and item.label == "Global 🌎"
+    )
+    assert global_button.disabled is False
