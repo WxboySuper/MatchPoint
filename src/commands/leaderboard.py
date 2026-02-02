@@ -570,6 +570,15 @@ class LeaderboardView(discord.ui.View):
         super().__init__(timeout=180)
         self.interaction = interaction
 
+        # Disable "Server" button if not in a guild (DM context)
+        if interaction.guild is None:
+            for item in self.children:
+                if (
+                    isinstance(item, discord.ui.Button)
+                    and item.label == "Server 🏘️"
+                ):
+                    item.disabled = True
+
     async def update_leaderboard(
         self, interaction: discord.Interaction, period: str, days: int = None
     ):
@@ -593,7 +602,7 @@ class LeaderboardView(discord.ui.View):
                 leaderboard to (used for time-windowed leaderboards);
                 when omitted, no time filter is applied.
         """
-        if period == "Server" and interaction.guild is None:
+        if period == "Server 🏘️" and interaction.guild is None:
             await interaction.response.send_message(
                 "The server leaderboard is only available within a server.",
                 ephemeral=True,
@@ -605,7 +614,7 @@ class LeaderboardView(discord.ui.View):
             # Only read guild id if interaction occurred in a guild
             guild_id = (
                 interaction.guild.id
-                if (period == "Server" and interaction.guild is not None)
+                if (period == "Server 🏘️" and interaction.guild is not None)
                 else None
             )
 
@@ -632,29 +641,29 @@ class LeaderboardView(discord.ui.View):
             )
             await interaction.edit_original_response(embed=embed, view=self)
 
-    @discord.ui.button(label="Global", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="Global 🌎", style=discord.ButtonStyle.primary)
     async def global_leaderboard(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        await self.update_leaderboard(interaction, "Global")
+        await self.update_leaderboard(interaction, "Global 🌎")
 
-    @discord.ui.button(label="Server", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Server 🏘️", style=discord.ButtonStyle.secondary)
     async def server_leaderboard(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        await self.update_leaderboard(interaction, "Server")
+        await self.update_leaderboard(interaction, "Server 🏘️")
 
-    @discord.ui.button(label="Weekly", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Weekly 📅", style=discord.ButtonStyle.secondary)
     async def weekly_leaderboard(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        await self.update_leaderboard(interaction, "Weekly", days=7)
+        await self.update_leaderboard(interaction, "Weekly 📅", days=7)
 
-    @discord.ui.button(label="Daily", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Daily ☀️", style=discord.ButtonStyle.secondary)
     async def daily_leaderboard(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        await self.update_leaderboard(interaction, "Daily", days=1)
+        await self.update_leaderboard(interaction, "Daily ☀️", days=1)
 
 
 class ContestSelectForLeaderboard(discord.ui.Select):
@@ -702,7 +711,7 @@ async def leaderboard(interaction: discord.Interaction):
         # Default to global view
         data = await get_leaderboard_data(session)
         embed = await create_leaderboard_embed(
-            "Global Leaderboard",
+            "Global 🌎 Leaderboard",
             data,
             interaction,
         )
