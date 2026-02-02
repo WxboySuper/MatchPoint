@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 
 DATA_PATH = Path(os.getenv("DATA_PATH", "data"))
@@ -29,3 +30,38 @@ def _parse_reminder_minutes(env_val: str | None):
 
 
 REMINDER_MINUTES = _parse_reminder_minutes(os.getenv("REMINDER_MINUTES"))
+
+
+def _parse_feature_flags(env_val: str | None) -> dict:
+    """Parse feature flags from environment variable (JSON or KEY=TRUE,KEY2=FALSE)."""
+    default_flags = {
+        "CS2_ENABLED": False,
+        "VALORANT_ENABLED": False,
+        "DOTA2_ENABLED": False,
+        "ROCKET_LEAGUE_ENABLED": False,
+        "USE_REAL_RATE_LIMITS": True,
+    }
+    if not env_val:
+        return default_flags
+
+    # Try parsing as JSON
+    try:
+        user_flags = json.loads(env_val)
+        if isinstance(user_flags, dict):
+            default_flags.update(user_flags)
+            return default_flags
+    except json.JSONDecodeError:
+        pass
+
+    # Fallback: key=value
+    for part in env_val.split(","):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            k = k.strip()
+            v_bool = v.strip().lower() == "true"
+            default_flags[k] = v_bool
+
+    return default_flags
+
+
+FEATURE_FLAGS = _parse_feature_flags(os.getenv("FEATURE_FLAGS"))
