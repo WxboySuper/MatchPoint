@@ -6,11 +6,10 @@ from datetime import datetime, timezone, timedelta
 import discord
 from discord import app_commands
 from sqlalchemy.orm import selectinload
-from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from src.db import get_session
-from src.models import Match, Pick
+from src.models import Match
 from src import crud
 
 logger = logging.getLogger("esports-bot.commands.pick")
@@ -178,37 +177,9 @@ class PickView(discord.ui.View):
                     session, str(self.user_id), interaction.user.name
                 )
 
-            # Check for existing pick
-            existing_pick_stmt = (
-                select(Pick)
-                .where(Pick.user_id == db_user.id)
-                .where(Pick.match_id == match.id)
+            crud.upsert_pick(
+                session, db_user.id, match.contest_id, match.id, team
             )
-            existing_pick = session.exec(existing_pick_stmt).first()
-
-            if existing_pick:
-                existing_pick.chosen_team = team
-                session.add(existing_pick)
-                session.commit()
-            else:
-                try:
-                    crud.create_pick(
-                        session,
-                        crud.PickCreateParams(
-                            user_id=db_user.id,
-                            contest_id=match.contest_id,
-                            match_id=match.id,
-                            chosen_team=team,
-                        ),
-                    )
-                except IntegrityError:
-                    # Race condition: pick was created by concurrent request
-                    session.rollback()
-                    existing_pick = session.exec(existing_pick_stmt).first()
-                    if existing_pick:
-                        existing_pick.chosen_team = team
-                        session.add(existing_pick)
-                        session.commit()
 
         # Update local state
         self.user_picks[match.id] = team

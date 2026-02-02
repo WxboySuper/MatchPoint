@@ -3,6 +3,7 @@ from typing import List, Optional, Tuple
 from datetime import datetime
 from dataclasses import dataclass
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 from src.models import Pick
@@ -54,6 +55,53 @@ def create_pick(session: Session, params: PickCreateParams) -> Pick:
     _save_and_refresh(session, pick)
     logger.info("Created pick with ID: %s", pick.id)
     return pick
+
+
+def upsert_pick(
+    session: Session,
+    user_id: int,
+    contest_id: int,
+    match_id: int,
+    chosen_team: str,
+) -> Pick:
+    """
+    Create or update a pick for a user in a contest match.
+    Handles potential race conditions using the unique constraint.
+    """
+    # 1. Try to find existing pick first
+    stmt = select(Pick).where(
+        Pick.user_id == user_id, Pick.match_id == match_id
+    )
+    existing_pick = session.exec(stmt).first()
+
+    if existing_pick:
+        if existing_pick.chosen_team != chosen_team:
+            existing_pick.chosen_team = chosen_team
+            _save_and_refresh(session, existing_pick)
+        return existing_pick
+
+    # 2. Try to create new pick
+    try:
+        return create_pick(
+            session,
+            PickCreateParams(
+                user_id=user_id,
+                contest_id=contest_id,
+                match_id=match_id,
+                chosen_team=chosen_team,
+            ),
+        )
+    except IntegrityError:
+        session.rollback()
+        # 3. Race condition handling: Check existence again
+        existing_pick = session.exec(stmt).first()
+        if existing_pick:
+            if existing_pick.chosen_team != chosen_team:
+                existing_pick.chosen_team = chosen_team
+                _save_and_refresh(session, existing_pick)
+            return existing_pick
+        # Should be unreachable unless match/user deleted concurrently
+        raise
 
 
 def get_pick_by_id(session: Session, pick_id: int) -> Optional[Pick]:

@@ -43,6 +43,7 @@ from .user import (
 )
 
 from .pick import (  # skipcq: PY-W2000
+    upsert_pick,
     create_pick,
     get_pick_by_id,
     list_picks_for_user,
