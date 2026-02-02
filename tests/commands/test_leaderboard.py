@@ -5,6 +5,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from src.commands.leaderboard import LeaderboardView, leaderboard
 
 
+def get_button_by_label(view, label):
+    """Helper to find a button in a view by its label."""
+    for item in view.children:
+        if isinstance(item, discord.ui.Button) and item.label == label:
+            return item
+    return None
+
+
 @pytest.fixture
 def mock_interaction():
     """Fixture for a mock discord.Interaction."""
@@ -64,11 +72,7 @@ async def test_leaderboard_view_button_click(
     view = LeaderboardView(mock_interaction)
 
     # Simulate clicking the "Server" button
-    button_to_click = None
-    for item in view.children:
-        if isinstance(item, discord.ui.Button) and item.label == "Server 🏘️":
-            button_to_click = item
-            break
+    button_to_click = get_button_by_label(view, "Server 🏘️")
     assert button_to_click is not None
     assert button_to_click.label == "Server 🏘️"
 
@@ -117,19 +121,11 @@ async def test_leaderboard_view_dm_context(mock_interaction):
     view = LeaderboardView(mock_interaction)
 
     # Assert
-    server_button = None
-    for item in view.children:
-        if isinstance(item, discord.ui.Button) and item.label == "Server 🏘️":
-            server_button = item
-            break
+    server_button = get_button_by_label(view, "Server 🏘️")
     assert server_button is not None
     assert server_button.disabled is True
 
     # Check other buttons are enabled
-    global_button = None
-    for item in view.children:
-        if isinstance(item, discord.ui.Button) and item.label == "Global 🌎":
-            global_button = item
-            break
+    global_button = get_button_by_label(view, "Global 🌎")
     assert global_button is not None
     assert global_button.disabled is False
