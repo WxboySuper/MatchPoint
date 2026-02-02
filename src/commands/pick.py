@@ -284,16 +284,6 @@ async def pick(interaction: discord.Interaction):
         interaction.user.id,
     )
     with get_session() as session:
-        # Get user and their existing picks
-        db_user = crud.get_user_by_discord_id(
-            session,
-            str(interaction.user.id),
-        )
-        user_picks = {}
-        if db_user:
-            picks = crud.list_picks_for_user(session, db_user.id)
-            user_picks = {pick.match_id: pick.chosen_team for pick in picks}
-
         # Fetch active matches that are within the pick window
         now_utc = datetime.now(timezone.utc)
         pick_cutoff = now_utc + timedelta(days=PICK_WINDOW_DAYS)
@@ -311,6 +301,19 @@ async def pick(interaction: discord.Interaction):
         if not active_matches:
             await _handle_no_matches(interaction, session)
             return
+
+        # Get user and their existing picks for active matches
+        db_user = crud.get_user_by_discord_id(
+            session,
+            str(interaction.user.id),
+        )
+        user_picks = {}
+        if db_user:
+            active_match_ids = [m.id for m in active_matches]
+            picks = crud.get_user_picks_for_matches(
+                session, db_user.id, active_match_ids
+            )
+            user_picks = {pick.match_id: pick.chosen_team for pick in picks}
 
         view = PickView(
             matches=active_matches,

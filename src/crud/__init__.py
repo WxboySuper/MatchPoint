@@ -50,6 +50,7 @@ from .pick import (  # skipcq: PY-W2000
     update_pick,
     delete_pick,
     get_user_pick_stats,
+    get_user_picks_for_matches,
     PickCreateParams,
 )
 

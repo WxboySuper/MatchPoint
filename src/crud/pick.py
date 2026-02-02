@@ -151,3 +151,28 @@ def get_user_pick_stats(session: Session, user_id: int) -> Tuple[int, int]:
     correct_picks = session.scalar(correct_query) or 0
 
     return total_picks, correct_picks
+
+
+def get_user_picks_for_matches(
+    session: Session, user_id: int, match_ids: List[int]
+) -> List[Pick]:
+    """
+    Fetch picks for a user restricted to a specific list of matches.
+
+    Parameters:
+        session (Session): Database session.
+        user_id (int): The ID of the user.
+        match_ids (List[int]): The IDs of the matches to fetch picks for.
+
+    Returns:
+        List[Pick]: A list of Pick objects for the specified matches.
+    """
+    logger.debug(
+        "Fetching picks for user %s and matches %s", user_id, match_ids
+    )
+    if not match_ids:
+        return []
+    statement = select(Pick).where(
+        Pick.user_id == user_id, Pick.match_id.in_(match_ids)
+    )
+    return list(session.exec(statement))
