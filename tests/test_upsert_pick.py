@@ -1,7 +1,10 @@
 import pytest
 from datetime import datetime
-from sqlmodel import SQLModel, Session, create_engine
+from unittest.mock import MagicMock, patch
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import SQLModel, Session, create_engine, select
 from src import crud
+from src.models import Pick
 
 
 @pytest.fixture()
@@ -17,7 +20,12 @@ def session(tmp_path):
             engine.dispose()
 
 
-def test_upsert_pick_handles_race_condition(session: Session, monkeypatch):
+def test_upsert_pick_handles_race_condition_logic(session: Session, monkeypatch):
+    """
+    Test that upsert_pick correctly recovers from an IntegrityError
+    (simulating a race condition where the initial check returns None
+    but the insert fails because a record exists).
+    """
     # Setup data
     user = crud.create_user(session, discord_id="u1", username="u1")
     contest = crud.create_contest(
@@ -40,47 +48,59 @@ def test_upsert_pick_handles_race_condition(session: Session, monkeypatch):
         ),
     )
 
-    # 1. Create initial pick using upsert
-    params1 = crud.PickCreateParams(
-        user_id=user.id,
-        contest_id=contest.id,
-        match_id=match.id,
-        chosen_team="A",
+    # 1. Pre-seed the DB with a pick (Team A)
+    existing_pick = crud.create_pick(
+        session,
+        crud.PickCreateParams(
+            user_id=user.id,
+            contest_id=contest.id,
+            match_id=match.id,
+            chosen_team="A",
+        )
     )
-    pick1 = crud.upsert_pick(session, params1)
-    assert pick1.id is not None
-    assert pick1.chosen_team == "A"
 
-    # 2. Update pick using upsert (standard update path)
-    params2 = crud.PickCreateParams(
+    # 2. Mock the initial existence check to return None
+    # This simulates "we didn't see it" (Race condition Step 1)
+    original_exec = session.exec
+
+    def side_effect(statement):
+        # If looking for this specific pick, pretend it's not there ONLY ONCE
+        # The logic calls exec twice: once at start, once in catch block.
+        # We need the first one to fail (return empty), second to succeed.
+        s_str = str(statement)
+        if "pick" in s_str.lower() and "user_id" in s_str.lower():
+            # This is a bit brittle but sufficient for a unit test of logic flow
+            # We'll use a counter to return None only the first time
+            if not hasattr(side_effect, "called"):
+                side_effect.called = True
+                mock_res = MagicMock()
+                mock_res.first.return_value = None
+                return mock_res
+        return original_exec(statement)
+
+    monkeypatch.setattr(session, "exec", side_effect)
+
+    # 3. Call upsert_pick trying to change to Team B
+    # - Check returns None (mocked)
+    # - create_pick called -> Raises IntegrityError (Real DB has unique constraint)
+    # - Catch IntegrityError
+    # - Check again (Real DB) -> Finds Pick
+    # - Updates to Team B
+    params = crud.PickCreateParams(
         user_id=user.id,
         contest_id=contest.id,
         match_id=match.id,
         chosen_team="B",
     )
-    pick2 = crud.upsert_pick(session, params2)
-    assert pick2.id == pick1.id
-    assert pick2.chosen_team == "B"
 
-    # 3. Simulate race condition:
-    # Force create_pick to fail with IntegrityError even if we didn't
-    # check existence. But upsert_pick checks existence first.
-    # To simulate race condition where check returns None but insert fails,
-    # we need to mock session.exec to return None on first call, but have
-    # the DB actually contain the record?
-    # That's hard with SQLite since we share the session.
+    # We need to ensure create_pick actually raises the right error string
+    # for SQLite ("UNIQUE constraint failed")
+    updated_pick = crud.upsert_pick(session, params)
 
-    # Just verify upsert works as intended for creating and updating.
-    # The IntegrityError handling path is hard to integration test without
-    # multiple threads/connections.
-    # But we can verify it *updates* correctly.
+    assert updated_pick.id == existing_pick.id
+    assert updated_pick.chosen_team == "B"
+    
+    # Verify the database state
+    session.refresh(existing_pick)
+    assert existing_pick.chosen_team == "B"
 
-    params3 = crud.PickCreateParams(
-        user_id=user.id,
-        contest_id=contest.id,
-        match_id=match.id,
-        chosen_team="A",
-    )
-    pick3 = crud.upsert_pick(session, params3)
-    assert pick3.id == pick1.id
-    assert pick3.chosen_team == "A"
