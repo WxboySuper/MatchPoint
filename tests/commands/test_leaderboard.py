@@ -65,10 +65,12 @@ async def test_leaderboard_view_button_click(
 
     # Simulate clicking the "Server" button
     button_to_click = next(
-        item
+        (item
         for item in view.children
-        if isinstance(item, discord.ui.Button) and item.label == "Server 🏘️"
+        if isinstance(item, discord.ui.Button) and item.label == "Server 🏘️"),
+        None
     )
+    assert button_to_click is not None
     assert button_to_click.label == "Server 🏘️"
 
     # Mock the return values for the update
@@ -117,16 +119,20 @@ async def test_leaderboard_view_dm_context(mock_interaction):
 
     # Assert
     server_button = next(
-        item
+        (item
         for item in view.children
-        if isinstance(item, discord.ui.Button) and item.label == "Server 🏘️"
+        if isinstance(item, discord.ui.Button) and item.label == "Server 🏘️"),
+        None
     )
+    assert server_button is not None
     assert server_button.disabled is True
 
     # Check other buttons are enabled
     global_button = next(
-        item
+        (item
         for item in view.children
-        if isinstance(item, discord.ui.Button) and item.label == "Global 🌎"
+        if isinstance(item, discord.ui.Button) and item.label == "Global 🌎"),
+        None
     )
+    assert global_button is not None
     assert global_button.disabled is False
