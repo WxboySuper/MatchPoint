@@ -120,6 +120,26 @@ class PandaScoreClient:
     def _build_url(endpoint: str) -> str:
         return f"{BASE_URL}{endpoint}"
 
+    def _update_rate_limits(self, response: aiohttp.ClientResponse) -> None:
+        """Sync local rate limit counter with server header."""
+        remaining = response.headers.get("X-Rate-Limit-Remaining")
+        if remaining is None:
+            return
+
+        try:
+            rem_val = int(remaining)
+            # Sync our counter to the server's view
+            # Server says X remaining => used = Max - X
+            used = max(0, RATE_LIMIT_REQUESTS - rem_val)
+            self._request_count = used
+            logger.debug(
+                "Rate Limit Sync: %s remaining, local count set to %s",
+                rem_val,
+                used,
+            )
+        except ValueError:
+            pass
+
     async def _do_request_once(
         self,
         session: aiohttp.ClientSession,
@@ -131,22 +151,7 @@ class PandaScoreClient:
         Keeps the request-scoped branching small so _make_request is simpler.
         """
         async with session.get(url, params=params) as response:
-            # Update rate limit tracking from headers if available
-            remaining = response.headers.get("X-Rate-Limit-Remaining")
-            if remaining is not None:
-                try:
-                    rem_val = int(remaining)
-                    # Sync our counter to the server's view
-                    # Server says X remaining => used = Max - X
-                    used = max(0, RATE_LIMIT_REQUESTS - rem_val)
-                    self._request_count = used
-                    logger.debug(
-                        "Rate Limit Sync: %s remaining, local count set to %s",
-                        rem_val,
-                        used,
-                    )
-                except ValueError:
-                    pass
+            self._update_rate_limits(response)
 
             if response.status == 429:
                 retry_after = response.headers.get("Retry-After")
