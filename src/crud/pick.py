@@ -87,15 +87,16 @@ def upsert_pick(session: Session, params: PickCreateParams) -> Pick:
     # 2. Try to create new pick
     try:
         return create_pick(session, params)
-    except IntegrityError:
-        session.rollback()
-        # 3. Race condition handling: Check existence again
-        existing_pick = session.exec(stmt).first()
-        if existing_pick:
-            return _update_pick_if_changed(
-                session, existing_pick, params.chosen_team
-            )
-        # Should be unreachable unless match/user deleted concurrently
+    except IntegrityError as e:
+        # Only handle UNIQUE constraint violations
+        if "UNIQUE constraint failed" in str(e) or "duplicate key" in str(e):
+            session.rollback()
+            # 3. Race condition handling: Check existence again
+            existing_pick = session.exec(stmt).first()
+            if existing_pick:
+                return _update_pick_if_changed(
+                    session, existing_pick, params.chosen_team
+                )
         raise
 
 
