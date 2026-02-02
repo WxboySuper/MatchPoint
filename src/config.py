@@ -32,6 +32,29 @@ def _parse_reminder_minutes(env_val: str | None):
 REMINDER_MINUTES = _parse_reminder_minutes(os.getenv("REMINDER_MINUTES"))
 
 
+def _apply_json_flags(env_val: str, default_flags: dict) -> bool:
+    """Try to parse and apply JSON flags. Returns True if successful."""
+    try:
+        user_flags = json.loads(env_val)
+        if not isinstance(user_flags, dict):
+            return False
+            
+        # Validate types for known flags
+        for k, v in user_flags.items():
+            if k in default_flags and isinstance(default_flags[k], bool):
+                # Coerce strings 'true'/'false' to bool
+                if isinstance(v, str):
+                    user_flags[k] = v.lower() == "true"
+                elif not isinstance(v, bool):
+                    # Force other types (int 0/1) to bool
+                    user_flags[k] = bool(v)
+        
+        default_flags.update(user_flags)
+        return True
+    except json.JSONDecodeError:
+        return False
+
+
 def _parse_feature_flags(env_val: str | None) -> dict:
     """Parse feature flags from environment variable (JSON or KEY=TRUE,KEY2=FALSE)."""
     default_flags = {
@@ -45,23 +68,8 @@ def _parse_feature_flags(env_val: str | None) -> dict:
         return default_flags
 
     # Try parsing as JSON
-    try:
-        user_flags = json.loads(env_val)
-        if isinstance(user_flags, dict):
-            # Validate types for known flags
-            for k, v in user_flags.items():
-                if k in default_flags and isinstance(default_flags[k], bool):
-                    # Coerce strings 'true'/'false' to bool
-                    if isinstance(v, str):
-                        user_flags[k] = v.lower() == "true"
-                    elif not isinstance(v, bool):
-                        # Force other types (int 0/1) to bool
-                        user_flags[k] = bool(v)
-            
-            default_flags.update(user_flags)
-            return default_flags
-    except json.JSONDecodeError:
-        pass
+    if _apply_json_flags(env_val, default_flags):
+        return default_flags
 
     # Fallback: key=value
     for part in env_val.split(","):
