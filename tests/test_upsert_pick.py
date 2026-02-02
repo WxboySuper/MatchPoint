@@ -41,12 +41,24 @@ def test_upsert_pick_handles_race_condition(session: Session, monkeypatch):
     )
 
     # 1. Create initial pick using upsert
-    pick1 = crud.upsert_pick(session, user.id, contest.id, match.id, "A")
+    params1 = crud.PickCreateParams(
+        user_id=user.id,
+        contest_id=contest.id,
+        match_id=match.id,
+        chosen_team="A",
+    )
+    pick1 = crud.upsert_pick(session, params1)
     assert pick1.id is not None
     assert pick1.chosen_team == "A"
 
     # 2. Update pick using upsert (standard update path)
-    pick2 = crud.upsert_pick(session, user.id, contest.id, match.id, "B")
+    params2 = crud.PickCreateParams(
+        user_id=user.id,
+        contest_id=contest.id,
+        match_id=match.id,
+        chosen_team="B",
+    )
+    pick2 = crud.upsert_pick(session, params2)
     assert pick2.id == pick1.id
     assert pick2.chosen_team == "B"
 
@@ -63,6 +75,12 @@ def test_upsert_pick_handles_race_condition(session: Session, monkeypatch):
     # multiple threads/connections.
     # But we can verify it *updates* correctly.
 
-    pick3 = crud.upsert_pick(session, user.id, contest.id, match.id, "A")
+    params3 = crud.PickCreateParams(
+        user_id=user.id,
+        contest_id=contest.id,
+        match_id=match.id,
+        chosen_team="A",
+    )
+    pick3 = crud.upsert_pick(session, params3)
     assert pick3.id == pick1.id
     assert pick3.chosen_team == "A"

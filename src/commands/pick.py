@@ -178,7 +178,13 @@ class PickView(discord.ui.View):
                 )
 
             crud.upsert_pick(
-                session, db_user.id, match.contest_id, match.id, team
+                session,
+                crud.PickCreateParams(
+                    user_id=db_user.id,
+                    contest_id=match.contest_id,
+                    match_id=match.id,
+                    chosen_team=team,
+                ),
             )
 
         # Update local state

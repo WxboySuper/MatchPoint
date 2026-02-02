@@ -57,49 +57,42 @@ def create_pick(session: Session, params: PickCreateParams) -> Pick:
     return pick
 
 
-def upsert_pick(
-    session: Session,
-    user_id: int,
-    contest_id: int,
-    match_id: int,
-    chosen_team: str,
+def _update_pick_if_changed(
+    session: Session, pick: Pick, new_team: str
 ) -> Pick:
+    if pick.chosen_team != new_team:
+        pick.chosen_team = new_team
+        _save_and_refresh(session, pick)
+    return pick
+
+
+def upsert_pick(session: Session, params: PickCreateParams) -> Pick:
     """
     Create or update a pick for a user in a contest match.
     Handles potential race conditions using the unique constraint.
     """
     # 1. Try to find existing pick first
     stmt = select(Pick).where(
-        Pick.user_id == user_id, Pick.match_id == match_id
+        Pick.user_id == params.user_id, Pick.match_id == params.match_id
     )
     existing_pick = session.exec(stmt).first()
 
     if existing_pick:
-        if existing_pick.chosen_team != chosen_team:
-            existing_pick.chosen_team = chosen_team
-            _save_and_refresh(session, existing_pick)
-        return existing_pick
+        return _update_pick_if_changed(
+            session, existing_pick, params.chosen_team
+        )
 
     # 2. Try to create new pick
     try:
-        return create_pick(
-            session,
-            PickCreateParams(
-                user_id=user_id,
-                contest_id=contest_id,
-                match_id=match_id,
-                chosen_team=chosen_team,
-            ),
-        )
+        return create_pick(session, params)
     except IntegrityError:
         session.rollback()
         # 3. Race condition handling: Check existence again
         existing_pick = session.exec(stmt).first()
         if existing_pick:
-            if existing_pick.chosen_team != chosen_team:
-                existing_pick.chosen_team = chosen_team
-                _save_and_refresh(session, existing_pick)
-            return existing_pick
+            return _update_pick_if_changed(
+                session, existing_pick, params.chosen_team
+            )
         # Should be unreachable unless match/user deleted concurrently
         raise
 
