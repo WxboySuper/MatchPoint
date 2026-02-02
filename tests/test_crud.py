@@ -396,6 +396,7 @@ def test_result_update_delete_missing(session: Session):
     assert crud.update_result(session, 8888, score="1-0") is None
     assert crud.delete_result(session, 8888) is False
 
+
 def test_get_user_picks_for_matches(session: Session):
     user, contest, _ = _mk_user_contest_match(session)
 
@@ -436,10 +437,14 @@ def test_get_user_picks_for_matches(session: Session):
     assert picks[0].match_id == matches[0].id
 
     # Query for match 2
-    picks_2 = crud.get_user_picks_for_matches(session, user.id, [matches[2].id])
+    picks_2 = crud.get_user_picks_for_matches(
+        session, user.id, [matches[2].id]
+    )
     assert len(picks_2) == 1
     assert picks_2[0].match_id == matches[2].id
 
     # Query for match 1 (no pick)
-    picks_1 = crud.get_user_picks_for_matches(session, user.id, [matches[1].id])
+    picks_1 = crud.get_user_picks_for_matches(
+        session, user.id, [matches[1].id]
+    )
     assert len(picks_1) == 0
