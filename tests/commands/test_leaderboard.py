@@ -64,12 +64,12 @@ async def test_leaderboard_view_button_click(
     view = LeaderboardView(mock_interaction)
 
     # Simulate clicking the "Server" button
-    button_to_click = next(
-        (item
+    server_btn_gen = (
+        item
         for item in view.children
-        if isinstance(item, discord.ui.Button) and item.label == "Server 🏘️"),
-        None
+        if isinstance(item, discord.ui.Button) and item.label == "Server 🏘️"
     )
+    button_to_click = next(server_btn_gen, None)
     assert button_to_click is not None
     assert button_to_click.label == "Server 🏘️"
 
@@ -118,21 +118,21 @@ async def test_leaderboard_view_dm_context(mock_interaction):
     view = LeaderboardView(mock_interaction)
 
     # Assert
-    server_button = next(
-        (item
+    server_btn_gen = (
+        item
         for item in view.children
-        if isinstance(item, discord.ui.Button) and item.label == "Server 🏘️"),
-        None
+        if isinstance(item, discord.ui.Button) and item.label == "Server 🏘️"
     )
+    server_button = next(server_btn_gen, None)
     assert server_button is not None
     assert server_button.disabled is True
 
     # Check other buttons are enabled
-    global_button = next(
-        (item
+    global_btn_gen = (
+        item
         for item in view.children
-        if isinstance(item, discord.ui.Button) and item.label == "Global 🌎"),
-        None
+        if isinstance(item, discord.ui.Button) and item.label == "Global 🌎"
     )
+    global_button = next(global_btn_gen, None)
     assert global_button is not None
     assert global_button.disabled is False
