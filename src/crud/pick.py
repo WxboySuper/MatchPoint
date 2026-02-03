@@ -70,10 +70,27 @@ def _update_pick_if_changed(
 
 def upsert_pick(session: Session, params: PickCreateParams) -> Pick:
     """
-    Create or update a pick for a user in a contest match.
-    Handles potential race conditions using the unique constraint.
+    Create or update a pick for a user in a match.
+    
+    Handles race conditions by catching IntegrityError and retrying.
+    This ensures concurrent pick submissions don't cause crashes.
+
+    Parameters:
+        session (Session): Database session.
+        params (PickCreateParams): Pick parameters including user_id, 
+            match_id, contest_id, and chosen_team.
+
+    Returns:
+        Pick: The created or updated Pick instance.
     """
-    # 1. Try to find existing pick first
+    logger.info(
+        "Upserting pick for user %s, match %s, team %s",
+        params.user_id,
+        params.match_id,
+        params.chosen_team,
+    )
+    
+    # First, try to find existing pick
     stmt = select(Pick).where(
         Pick.user_id == params.user_id, Pick.match_id == params.match_id
     )
@@ -84,20 +101,35 @@ def upsert_pick(session: Session, params: PickCreateParams) -> Pick:
             session, existing_pick, params.chosen_team
         )
 
-    # 2. Try to create new pick
+    # No existing pick, try to create
     try:
         return create_pick(session, params)
-    except IntegrityError as e:
-        # Only handle UNIQUE constraint violations
-        if "UNIQUE constraint failed" in str(e) or "duplicate key" in str(e):
-            session.rollback()
-            # 3. Race condition handling: Check existence again
-            existing_pick = session.exec(stmt).first()
-            if existing_pick:
-                return _update_pick_if_changed(
-                    session, existing_pick, params.chosen_team
-                )
-        raise
+    except IntegrityError:
+        # Race condition: another request created the pick between our
+        # SELECT and INSERT. Rollback and retry the SELECT.
+        logger.warning(
+            "IntegrityError creating pick for user %s, match %s - retrying",
+            params.user_id,
+            params.match_id,
+        )
+        session.rollback()
+        
+        # Re-query for the pick that was just created
+        existing_pick = session.exec(stmt).first()
+        
+        # Null safety: if pick still doesn't exist, something else went wrong
+        if not existing_pick:
+            logger.error(
+                "Pick still not found after IntegrityError for user %s, match %s",
+                params.user_id,
+                params.match_id,
+            )
+            raise
+        
+        # Update the pick that won the race
+        return _update_pick_if_changed(
+            session, existing_pick, params.chosen_team
+        )
 
 
 def get_pick_by_id(session: Session, pick_id: int) -> Optional[Pick]:
