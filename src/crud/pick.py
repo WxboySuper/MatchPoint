@@ -76,6 +76,34 @@ def _update_pick_if_changed(
     return pick
 
 
+def _handle_integrity_error(
+    session: Session, params: PickCreateParams
+) -> Pick:
+    """
+    Handle IntegrityError by checking if the pick exists (race condition).
+
+    If the pick was created concurrently, update and return it.
+    Otherwise, re-raise the exception (e.g., foreign key violation).
+    """
+    stmt = select(Pick).where(
+        Pick.user_id == params.user_id, Pick.match_id == params.match_id
+    )
+    existing_pick = session.exec(stmt).first()
+
+    if existing_pick:
+        logger.info(
+            "Race condition detected/handled for user %s, match %s",
+            params.user_id,
+            params.match_id,
+        )
+        return _update_pick_if_changed(
+            session, existing_pick, params.chosen_team
+        )
+
+    # Re-raise the original IntegrityError
+    raise
+
+
 def upsert_pick(session: Session, params: PickCreateParams) -> Pick:
     """
     Create or update a pick for a user in a contest match.
@@ -97,14 +125,8 @@ def upsert_pick(session: Session, params: PickCreateParams) -> Pick:
         return create_pick(session, params)
     except IntegrityError:
         session.rollback()
-        # 3. Race condition handling: Check existence again
-        existing_pick = session.exec(stmt).first()
-        if existing_pick:
-            return _update_pick_if_changed(
-                session, existing_pick, params.chosen_team
-            )
-        # Should be unreachable unless match/user deleted concurrently
-        raise
+        # 3. Handle race condition
+        return _handle_integrity_error(session, params)
 
 
 def get_pick_by_id(session: Session, pick_id: int) -> Optional[Pick]:
