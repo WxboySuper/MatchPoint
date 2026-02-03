@@ -7,6 +7,7 @@ Create Date: 2026-02-02 12:28:26.959711
 """
 
 from alembic import op
+import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "549c0b6c69a6"
@@ -16,7 +17,17 @@ depends_on = None
 
 
 def upgrade():
-    # Only adding the unique constraint to pick table
+    # Find and delete duplicate picks, keeping only the one with the highest ID (most recent)
+    conn.execute(
+        sa.text("""
+        DELETE FROM pick
+        WHERE id NOT IN (
+            SELECT MAX(id)
+            FROM pick
+            GROUP BY user_id, match_id
+        )
+        """)
+    )
     with op.batch_alter_table("pick", schema=None) as batch_op:
         batch_op.create_unique_constraint(
             "uq_pick_user_match", ["user_id", "match_id"]
