@@ -32,12 +32,36 @@ def _parse_reminder_minutes(env_val: str | None):
 REMINDER_MINUTES = _parse_reminder_minutes(os.getenv("REMINDER_MINUTES"))
 
 
+def _apply_json_flags(env_val: str, flags: dict):
+    """Try to parse JSON and update flags dict."""
+    try:
+        user_flags = json.loads(env_val)
+        if isinstance(user_flags, dict):
+            for k, v in user_flags.items():
+                if k in flags:
+                    flags[k] = str(v).lower() == "true"
+            return True
+    except json.JSONDecodeError:
+        pass
+    return False
+
+
+def _apply_csv_flags(env_val: str, flags: dict):
+    """Fallback to comma-separated key=value pairs."""
+    for part in env_val.split(","):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            k = k.strip()
+            if k in flags:
+                flags[k] = v.strip().lower() == "true"
+
+
 def _parse_feature_flags(env_val: str | None) -> dict:
     """
     Parse feature flags from environment variable
     (JSON or KEY=TRUE,KEY2=FALSE).
     """
-    default_flags = {
+    flags = {
         "CS2_ENABLED": False,
         "VALORANT_ENABLED": False,
         "DOTA2_ENABLED": False,
@@ -45,31 +69,12 @@ def _parse_feature_flags(env_val: str | None) -> dict:
         "USE_REAL_RATE_LIMITS": True,
     }
     if not env_val:
-        return default_flags
+        return flags
 
-    # Try parsing as JSON
-    try:
-        user_flags = json.loads(env_val)
-        if isinstance(user_flags, dict):
-            for k, v in user_flags.items():
-                if k in default_flags:
-                    if isinstance(default_flags[k], bool):
-                        default_flags[k] = str(v).lower() == "true"
-                    else:
-                        default_flags[k] = v
-            return default_flags
-    except json.JSONDecodeError:
-        pass
+    if not _apply_json_flags(env_val, flags):
+        _apply_csv_flags(env_val, flags)
 
-    # Fallback: key=value
-    for part in env_val.split(","):
-        if "=" in part:
-            k, v = part.split("=", 1)
-            k = k.strip()
-            if k in default_flags:
-                default_flags[k] = v.strip().lower() == "true"
-
-    return default_flags
+    return flags
 
 
 FEATURE_FLAGS = _parse_feature_flags(os.getenv("FEATURE_FLAGS"))
