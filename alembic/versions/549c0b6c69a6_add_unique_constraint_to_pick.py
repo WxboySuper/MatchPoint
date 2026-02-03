@@ -23,16 +23,14 @@ def upgrade():
 
     # Find and delete duplicate picks, keeping only the one with the highest ID (most recent)
     conn.execute(
-        sa.text(
-            """
-            DELETE FROM pick
-            WHERE id NOT IN (
-                SELECT MAX(id)
-                FROM pick
-                GROUP BY user_id, match_id
-            )
-            """
+        sa.text("""
+        DELETE FROM pick
+        WHERE id NOT IN (
+            SELECT MAX(id)
+            FROM pick
+            GROUP BY user_id, match_id
         )
+        """)
     )
 
     # Step 2: Add the unique constraint to pick table
