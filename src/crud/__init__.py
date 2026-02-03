@@ -101,6 +101,7 @@ __all__ = [
     "update_pick",
     "delete_pick",
     "get_user_pick_stats",
+    "get_user_picks_for_matches",
     "PickCreateParams",
     "create_result",
     "get_result_by_id",
