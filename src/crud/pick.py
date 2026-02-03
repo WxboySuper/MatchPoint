@@ -66,6 +66,20 @@ def _update_pick_if_changed(
     return pick
 
 
+def _handle_integrity_error(session: Session, stmt, params: PickCreateParams, original_exc: IntegrityError) -> Pick:
+    """Handle IntegrityError during upsert by checking for existing pick after rollback.
+
+    If an existing pick is found, update it. Otherwise re-raise the original
+    IntegrityError to preserve context for callers.
+    """
+    session.rollback()
+    existing = session.exec(stmt).first()
+    if existing:
+        return _update_pick_if_changed(session, existing, params.chosen_team)
+    # No existing pick found; re-raise original exception
+    raise original_exc
+
+
 def upsert_pick(session: Session, params: PickCreateParams) -> Pick:
     """
     Create or update a pick for a user in a contest match.
@@ -85,16 +99,9 @@ def upsert_pick(session: Session, params: PickCreateParams) -> Pick:
     # 2. Try to create new pick
     try:
         return create_pick(session, params)
-    except IntegrityError:
-        session.rollback()
-        # 3. Race condition handling: Check existence again
-        existing_pick = session.exec(stmt).first()
-        if existing_pick:
-            return _update_pick_if_changed(
-                session, existing_pick, params.chosen_team
-            )
-        # Should be unreachable unless match/user deleted concurrently
-        raise
+    except IntegrityError as exc:
+        # Use helper to handle race condition; will re-raise original if needed
+        return _handle_integrity_error(session, stmt, params, exc)
 
 
 def get_pick_by_id(session: Session, pick_id: int) -> Optional[Pick]:

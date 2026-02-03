@@ -1,5 +1,6 @@
 import pytest
 from datetime import datetime
+from unittest import mock
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import SQLModel, Session, create_engine
 from src import crud
@@ -100,14 +101,28 @@ def test_upsert_pick_handles_race_condition(session: Session):
     assert pick1.id is not None
     assert pick1.chosen_team == "A"
 
-    # 2. Update pick using upsert (standard update path)
+    # 2. Simulate a race condition on create: patch create_pick to
+    # create the pick and then raise IntegrityError to simulate another
+    # concurrent transaction inserting the same unique row.
     params2 = crud.PickCreateParams(
         user_id=user.id,
         contest_id=contest.id,
         match_id=match.id,
         chosen_team="B",
     )
-    pick2 = crud.upsert_pick(session, params2)
+
+    original_create = crud.create_pick
+
+    def side_effect(session_arg, params_arg):
+        # Use the real create to insert the competing pick, then raise
+        created = original_create(session_arg, params_arg)
+        raise IntegrityError("Simulated race", None, None)
+
+    with mock.patch.object(crud, "create_pick", side_effect=side_effect):
+        # upsert_pick should handle the IntegrityError by re-querying and
+        # updating the existing pick to chosen_team="B"
+        pick2 = crud.upsert_pick(session, params2)
+
     assert pick2.id == pick1.id
     assert pick2.chosen_team == "B"
 
