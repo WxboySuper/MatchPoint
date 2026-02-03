@@ -115,7 +115,7 @@ def test_upsert_pick_handles_race_condition(session: Session):
 
     def side_effect(session_arg, params_arg):
         # Use the real create to insert the competing pick, then raise
-        created = original_create(session_arg, params_arg)
+        original_create(session_arg, params_arg)
         raise IntegrityError("Simulated race", None, None)
 
     with mock.patch.object(crud, "create_pick", side_effect=side_effect):

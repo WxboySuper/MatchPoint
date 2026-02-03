@@ -66,7 +66,12 @@ def _update_pick_if_changed(
     return pick
 
 
-def _handle_integrity_error(session: Session, stmt, params: PickCreateParams, original_exc: IntegrityError) -> Pick:
+def _handle_integrity_error(
+    session: Session,
+    stmt,
+    params: PickCreateParams,
+    original_exc: IntegrityError,
+) -> Pick:
     """Handle IntegrityError during upsert by checking for existing pick after rollback.
 
     If an existing pick is found, update it. Otherwise re-raise the original
