@@ -23,6 +23,7 @@ class PickCreateParams:
 
 # Allow this function to have multiple explicit args for clarity
 # despite lint rules
+# pylint: disable=too-many-arguments
 def create_pick(session: Session, params: PickCreateParams) -> Pick:
     """
     Create and persist a Pick for a user in a contest match.
@@ -59,17 +60,6 @@ def create_pick(session: Session, params: PickCreateParams) -> Pick:
 def _update_pick_if_changed(
     session: Session, pick: Pick, new_team: str
 ) -> Pick:
-    """
-    Update the chosen team for a pick if it differs from the current value.
-
-    Parameters:
-        session (Session): Database session.
-        pick (Pick): The existing Pick object.
-        new_team (str): The new team name.
-
-    Returns:
-        Pick: The updated (or unchanged) Pick object.
-    """
     if pick.chosen_team != new_team:
         pick.chosen_team = new_team
         _save_and_refresh(session, pick)
