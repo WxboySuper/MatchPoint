@@ -38,7 +38,7 @@ def _apply_json_flags(env_val: str, default_flags: dict) -> bool:
         user_flags = json.loads(env_val)
         if not isinstance(user_flags, dict):
             return False
-            
+
         # Validate types for known flags
         for k, v in user_flags.items():
             if k in default_flags and isinstance(default_flags[k], bool):
@@ -48,7 +48,7 @@ def _apply_json_flags(env_val: str, default_flags: dict) -> bool:
                 elif not isinstance(v, bool):
                     # Force other types (int 0/1) to bool
                     user_flags[k] = bool(v)
-        
+
         default_flags.update(user_flags)
         return True
     except json.JSONDecodeError:
@@ -56,7 +56,10 @@ def _apply_json_flags(env_val: str, default_flags: dict) -> bool:
 
 
 def _parse_feature_flags(env_val: str | None) -> dict:
-    """Parse feature flags from environment variable (JSON or KEY=TRUE,KEY2=FALSE)."""
+    """
+    Parse feature flags from environment variable
+    (JSON or KEY=TRUE,KEY2=FALSE).
+    """
     default_flags = {
         "CS2_ENABLED": False,
         "VALORANT_ENABLED": False,
