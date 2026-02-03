@@ -1,7 +1,7 @@
 discord.py==2.6.4
 python-dotenv==1.2.1
 sqlmodel==0.0.31
-alembic==1.18.1
+alembic==1.18.3
 apscheduler
 aiohttp
 aiosqlite
