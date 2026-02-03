@@ -100,7 +100,7 @@ async def test_pick_view_pick_logic(mock_crud, mock_get_session, mock_matches):
     await view.on_team1(mock_interaction)
 
     # Verify DB calls
-    mock_crud.create_pick.assert_called_once()
+    mock_crud.upsert_pick.assert_called_once()
 
     # Verify state update
     assert view.user_picks[1] == "T1"

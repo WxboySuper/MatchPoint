@@ -1,5 +1,3 @@
-# flake8: noqa
-
 from .team import (  # skipcq: PY-W2000
     upsert_team,
     upsert_team_by_pandascore,
@@ -43,6 +41,7 @@ from .user import (
 )
 
 from .pick import (  # skipcq: PY-W2000
+    upsert_pick,
     create_pick,
     get_pick_by_id,
     list_picks_for_user,
@@ -61,3 +60,52 @@ from .result import (
     update_result,
     delete_result,
 )
+
+__all__ = [
+    # API Exports
+    "upsert_team",
+    "upsert_team_by_pandascore",
+    "get_team_by_pandascore_id",
+    "upsert_contest",
+    "upsert_contest_by_pandascore",
+    "get_contest_by_pandascore_ids",
+    "create_contest",
+    "get_contest_by_id",
+    "list_contests",
+    "update_contest",
+    "delete_contest",
+    "ContestUpdateParams",
+    "upsert_match",
+    "upsert_match_by_pandascore",
+    "get_match_by_pandascore_id",
+    "create_match",
+    "bulk_create_matches",
+    "get_matches_by_date",
+    "list_matches_for_contest",
+    "get_match_with_result_by_id",
+    "get_match_by_id",
+    "list_all_matches",
+    "update_match",
+    "delete_match",
+    "MatchCreateParams",
+    "MatchUpdateParams",
+    "create_user",
+    "get_user_by_discord_id",
+    "update_user",
+    "delete_user",
+    "upsert_pick",
+    "create_pick",
+    "get_pick_by_id",
+    "list_picks_for_user",
+    "list_picks_for_match",
+    "update_pick",
+    "delete_pick",
+    "get_user_pick_stats",
+    "get_user_picks_for_matches",
+    "PickCreateParams",
+    "create_result",
+    "get_result_by_id",
+    "get_result_for_match",
+    "update_result",
+    "delete_result",
+]
