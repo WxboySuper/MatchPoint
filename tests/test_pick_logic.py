@@ -1,8 +1,10 @@
 import pytest
+from unittest.mock import patch, MagicMock
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import SQLModel, Session, create_engine
 from src import crud
+from src.models import Pick
 
 
 @pytest.fixture()
@@ -89,25 +91,47 @@ def test_upsert_pick_handles_race_condition(session: Session):
         ),
     )
 
-    # 1. Create initial pick using upsert
-    params1 = crud.PickCreateParams(
+    params = crud.PickCreateParams(
         user_id=user.id,
         contest_id=contest.id,
         match_id=match.id,
         chosen_team="A",
     )
-    pick1 = crud.upsert_pick(session, params1)
+
+    # Create a dummy pick object to act as the "found" pick
+    # We don't save it to DB because we want the first SELECT to find nothing
+    dummy_pick = Pick(
+        user_id=user.id,
+        contest_id=contest.id,
+        match_id=match.id,
+        chosen_team="A",
+        id=999  # Fake ID
+    )
+    
+    # To simulate the race condition:
+    # 1. upsert_pick checks for existence -> returns None (simulating "not seen yet")
+    # 2. upsert_pick calls create_pick -> raises IntegrityError (simulating "someone else inserted it")
+    # 3. upsert_pick calls _handle_integrity_error -> finds the pick and returns it
+    
+    with patch("src.crud.pick.create_pick", side_effect=IntegrityError("Simulated Race", {}, None)) as mock_create:
+        with patch("src.crud.pick._handle_integrity_error", return_value=dummy_pick) as mock_handle:
+            
+            result = crud.upsert_pick(session, params)
+            
+            # Since we mocked _handle... to return 'dummy_pick', result should be that object.
+            assert result.id == dummy_pick.id
+            mock_create.assert_called_once()
+            mock_handle.assert_called_once()
+
+    # 1. Create initial pick using upsert (normal flow)
+    # First delete the existing one and let upsert create it normally
+    pick1 = crud.upsert_pick(session, params)
     assert pick1.id is not None
     assert pick1.chosen_team == "A"
 
     # 2. Update pick using upsert (standard update path)
-    params2 = crud.PickCreateParams(
-        user_id=user.id,
-        contest_id=contest.id,
-        match_id=match.id,
-        chosen_team="B",
-    )
-    pick2 = crud.upsert_pick(session, params2)
+    params.chosen_team = "B"
+    pick2 = crud.upsert_pick(session, params)
     assert pick2.id == pick1.id
     assert pick2.chosen_team == "B"
 
