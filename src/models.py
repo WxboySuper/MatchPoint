@@ -99,6 +99,9 @@ class Match(SQLModel, table=True):
 
 
 class Pick(SQLModel, table=True):
+    __table_args__ = (
+        sa.UniqueConstraint("user_id", "match_id", name="uq_pick_user_match"),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", index=True)
     contest_id: int = Field(foreign_key="contest.id", index=True)
