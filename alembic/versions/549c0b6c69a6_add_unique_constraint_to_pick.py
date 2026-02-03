@@ -19,14 +19,12 @@ depends_on = None
 def upgrade():
     # Clean up any duplicate picks, keeping the one with the lowest id
     conn = op.get_bind()
-    cleanup_sql = sa.text(
-        """
+    cleanup_sql = sa.text("""
         DELETE FROM pick
         WHERE id NOT IN (
             SELECT MIN(id) FROM pick GROUP BY user_id, match_id
         )
-        """
-    )
+        """)
     conn.execute(cleanup_sql)
 
     # Add the unique constraint to pick table

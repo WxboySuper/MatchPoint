@@ -72,10 +72,10 @@ def _handle_integrity_error(
     params: PickCreateParams,
     original_exc: IntegrityError,
 ) -> Pick:
-    """Handle IntegrityError during upsert by checking for existing pick after rollback.
+    """Handle IntegrityError during upsert by checking for existing pick.
 
-    If an existing pick is found, update it. Otherwise re-raise the original
-    IntegrityError to preserve context for callers.
+    Checks after rollback. If an existing pick is found, update it.
+    Otherwise re-raise the original IntegrityError to preserve context.
     """
     session.rollback()
     existing = session.exec(stmt).first()
