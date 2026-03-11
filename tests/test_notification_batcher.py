@@ -30,7 +30,9 @@ async def test_batch_reminders():
         src.notification_batcher, "_bulk_fetch_teams", new_callable=AsyncMock
     ) as mock_bulk_teams, patch.object(
         src.notification_batcher, "_resolve_teams"
-    ) as mock_resolve_teams:
+    ) as mock_resolve_teams, patch.object(
+        src.notification_batcher, "get_guild_config_async", new_callable=AsyncMock, return_value=None
+    ) as mock_get_guild_cfg:
 
         mock_session_cls.return_value.__aenter__.return_value = mock_session
 
@@ -104,7 +106,6 @@ async def test_batch_results():
     ) as mock_resolve_teams:
 
         mock_session_cls.return_value.__aenter__.return_value = mock_session
-
         now = datetime.now(timezone.utc)
         contest = Contest(
             name="C1",
