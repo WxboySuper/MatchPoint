@@ -60,6 +60,22 @@ from .result import (
     update_result,
     delete_result,
 )
+from .guild_config import (
+    get_guild_config,
+    upsert_guild_config,
+    delete_guild_config,
+    get_guild_config_async,
+    upsert_guild_config_async,
+    delete_guild_config_async,
+)
+from .live_update_message import (
+    get_live_message,
+    set_live_message,
+    delete_live_message,
+    get_live_message_async,
+    set_live_message_async,
+    delete_live_message_async,
+)
 
 __all__ = [
     # API Exports
@@ -108,4 +124,16 @@ __all__ = [
     "get_result_for_match",
     "update_result",
     "delete_result",
+    "get_guild_config",
+    "upsert_guild_config",
+    "delete_guild_config",
+    "get_guild_config_async",
+    "upsert_guild_config_async",
+    "delete_guild_config_async",
+    "get_live_message",
+    "set_live_message",
+    "delete_live_message",
+    "get_live_message_async",
+    "set_live_message_async",
+    "delete_live_message_async",
 ]

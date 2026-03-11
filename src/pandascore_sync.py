@@ -34,7 +34,7 @@ from src.pandascore_processing import (
     _process_single_match,
     _detect_match_result,
 )
-from src.parsers.lol import LoLParser
+from src.parsers.factory import get_parser
 
 logger = logging.getLogger(__name__)
 
@@ -97,13 +97,19 @@ async def _run_post_sync_actions(
             await _process_with_yield_calls(time_calls, batch=5)
 
 
-async def _fetch_matches_for_sync(league_ids: Optional[List[int]]):
+async def _fetch_matches_for_sync(league_ids: Optional[List[int]], game_slug: Optional[str] = None):
     """Fetch upcoming, running and recent past matches for sync.
 
     Returns combined list or None on failure.
     """
     try:
-        game_slug = "lol"
+        # Allow caller or environment defaults to specify which game to fetch.
+        # For now we default to "lol" for backward compatibility.
+        from src.config import DEFAULT_GAMES
+
+        if not game_slug:
+            game_slug = DEFAULT_GAMES[0] if DEFAULT_GAMES else "lol"
+
         upcoming_coro = pandascore_client.fetch_matches(
             "upcoming",
             {
@@ -152,12 +158,24 @@ async def _process_matches_and_commit(
     and summary.
     """
     summary = {"contests": 0, "matches": 0, "teams": 0}
-    # Initialize the parser here.
-    # Future enhancement: allow passing parser from caller.
-    parser = LoLParser()
-    ctx = PandaScoreSyncContext(
-        db_session=db_session, summary=summary, parser=parser
-    )
+    # Resolve parser for this sync run. The caller may pass a game_slug
+    # to select which parser to use; default to LoL for backward
+    # compatibility.
+    # Note: the function signature was intentionally kept small; callers
+    # will provide a 'game' attribute on the db_session via closure or
+    # pass a parser directly if desired. For simplicity, the calling
+    # perform_pandascore_sync passes the desired game here via the
+    # 'db_session' context and local variable.
+    # To keep changes minimal, expect callers to set `game_for_run` in
+    # the outer scope and use it here by closing over it. If absent,
+    # default to 'lol'.
+    game_for_run = getattr(db_session, "_sync_game", None) or "lol"
+    parser = get_parser(game_for_run)
+    if parser is None:
+        logger.error("No parser available for '%s'", game_for_run)
+        return ([], [], [], summary)
+
+    ctx = PandaScoreSyncContext(db_session=db_session, summary=summary, parser=parser)
 
     for i, match_data in enumerate(matches_data):
         try:
@@ -181,6 +199,7 @@ async def _process_matches_and_commit(
 
 async def perform_pandascore_sync(
     league_ids: Optional[List[int]] = None,
+    game: Optional[str] = None,
 ) -> Optional[Dict[str, int]]:
     """
     Perform a full sync of upcoming matches from PandaScore.
@@ -197,7 +216,7 @@ async def perform_pandascore_sync(
     """
     logger.info("Starting PandaScore sync...")
 
-    matches_data = await _fetch_matches_for_sync(league_ids)
+    matches_data = await _fetch_matches_for_sync(league_ids, game_slug=game)
     if matches_data is None:
         return None
     if not matches_data:
@@ -209,6 +228,14 @@ async def perform_pandascore_sync(
     )
 
     async with get_async_session() as db_session:
+        # Attach desired game to the session object so lower-level helpers
+        # can pick it up when needed (lightweight pragmatic approach).
+        try:
+            setattr(db_session, "_sync_game", game or None)
+        except Exception:
+            # Non-fatal: if we cannot attach, parser selection falls back
+            # to defaults in _process_matches_and_commit.
+            pass
         (
             all_matches_to_schedule,
             all_notifications,
@@ -235,8 +262,12 @@ async def sync_running_matches() -> Dict[str, Any]:
     logger.info("Syncing running matches from PandaScore...")
 
     try:
+        # Default to configured default game if none provided by caller.
+        from src.config import DEFAULT_GAMES
+
+        game_slug = DEFAULT_GAMES[0] if DEFAULT_GAMES else "lol"
         running_matches = await pandascore_client.fetch_running_matches(
-            game="lol"
+            game=game_slug
         )
     except Exception:
         logger.exception("Failed to fetch running matches")
@@ -298,10 +329,14 @@ async def fetch_and_update_match_result(pandascore_id: int) -> bool:
             logger.info("Match %s already has a result", match.id)
             return True
 
+        parser = get_parser("lol")
+        if parser is None:
+            logger.error("No parser available for 'lol'")
+            return False
         ctx = PandaScoreSyncContext(
             db_session=db_session,
             summary={"contests": 0, "matches": 0, "teams": 0},
-            parser=LoLParser(),
+            parser=parser,
         )
 
         await _detect_match_result(match_data, match, ctx)

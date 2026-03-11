@@ -122,9 +122,32 @@ async def poll_running_matches_job() -> None:
 
 
 async def _fetch_running_matches():
-    """Fetch running matches, return empty list on error."""
+    """Fetch running matches for all configured default games.
+
+    Returns a de-duplicated list of running match dicts. On error returns
+    an empty list.
+    """
     try:
-        return await pandascore_client.fetch_running_matches()
+        from src.config import DEFAULT_GAMES
+
+        games = DEFAULT_GAMES or ["lol"]
+        # Fetch running matches for each configured game concurrently
+        coros = [pandascore_client.fetch_running_matches(game=g) for g in games]
+        results = await asyncio.gather(*coros, return_exceptions=True)
+
+        combined = []
+        seen = set()
+        for res in results:
+            if isinstance(res, Exception):
+                logger.exception("Error fetching running matches for a game: %s", res)
+                continue
+            for m in res:
+                mid = m.get("id")
+                if mid and mid not in seen:
+                    seen.add(mid)
+                    combined.append(m)
+
+        return combined
     except Exception:
         logger.exception("Failed to fetch running matches")
         return []

@@ -89,6 +89,7 @@ class Match(SQLModel, table=True):
     team2_id: Optional[int] = Field(default=None)  # PandaScore team ID
     best_of: Optional[int] = Field(default=None)
     status: Optional[str] = Field(default="not_started")  # PandaScore status
+    game: Optional[str] = Field(default="lol", index=True)
     last_announced_score: Optional[str] = Field(default=None)
     scheduled_time: datetime = Field(
         sa_column=Column(TZDateTime(), nullable=False, index=True)
@@ -125,3 +126,22 @@ class Result(SQLModel, table=True):
     winner: str
     score: Optional[str]
     match: "Match" = Relationship(back_populates="result")
+
+
+class GuildConfig(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    guild_id: int = Field(index=True, unique=True)
+    announcement_channel_id: Optional[int] = Field(default=None)
+    live_updates_channel_id: Optional[int] = Field(default=None)
+    setup_completed: bool = Field(default=False)
+    enabled_games: Optional[str] = Field(default=None)  # comma-separated slugs
+
+
+class LiveUpdateMessage(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    guild_id: int = Field(index=True)
+    channel_id: int = Field(index=True)
+    message_id: int = Field(index=True)
+    scope_type: str = Field(default="guild_live")
+    scope_key: Optional[str] = Field(default=None)
+    last_rendered_at: Optional[datetime] = Field(default=None, sa_column=Column(TZDateTime(), nullable=True))

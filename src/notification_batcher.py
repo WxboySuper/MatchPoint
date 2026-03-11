@@ -11,8 +11,13 @@ from sqlalchemy.orm import selectinload
 
 from src.db import get_async_session
 from src.models import Match, Result, Pick, Team
-from src.announcements import broadcast_embed_to_guilds
+from src.announcements import broadcast_embed_to_guilds, send_announcement
 from src.bot_instance import get_bot_instance
+from src.crud import (
+    get_guild_config_async,
+    get_live_message_async,
+    set_live_message_async,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +159,7 @@ async def _process_generic(
     fetch_batch: Callable[[Any, List[Any]], Any],
     build_embed: Callable[[List[Any]], discord.Embed],
     context_fmt: str,
+    scope_type: Optional[str] = None,
 ):
     """
     Generic processor for batch items using bulk fetching.
@@ -176,7 +182,16 @@ async def _process_generic(
 
         embed = build_embed(data_list)
         context = f"{context_fmt} for {len(data_list)} matches"
-        await broadcast_embed_to_guilds(bot, embed, context)
+
+        # Derive game slug from the first match when available. Default to
+        # 'lol' for backwards compatibility.
+        try:
+            first_match = data_list[0][0]
+            game_slug = getattr(first_match, "game", "lol")
+        except Exception:
+            game_slug = "lol"
+
+        await _deliver_embed(bot, embed, context, game_slug, scope_type)
 
 
 async def _process_reminders(minutes: int, match_ids: List[int]):
@@ -184,7 +199,11 @@ async def _process_reminders(minutes: int, match_ids: List[int]):
         return _build_reminder_embed(minutes, data_list)
 
     await _process_generic(
-        match_ids, _fetch_reminders_batch, build, f"{minutes}-minute reminder"
+        match_ids,
+        _fetch_reminders_batch,
+        build,
+        f"{minutes}-minute reminder",
+        scope_type="upcoming",
     )
 
 
@@ -207,6 +226,7 @@ async def _process_results(items: List[Tuple[int, int]]):
         _fetch_results_batch,
         _build_result_embed,
         "result notification",
+        scope_type="results",
     )
 
 
@@ -250,6 +270,7 @@ async def _process_time_changes(items: List[Tuple[int, Any, Any]]):
         _fetch_simple_batch,
         _build_time_change_embed,
         "time change notification",
+        scope_type="upcoming",
     )
 
 
@@ -259,6 +280,7 @@ async def _process_mid_series(items: List[Tuple[int, str]]):
         _fetch_simple_batch,
         _build_mid_series_embed,
         "mid-series update",
+        scope_type="running",
     )
 
 
@@ -512,5 +534,157 @@ def _populate_list_embed(
     return embed
 
 
+async def _deliver_embed(
+    bot: discord.Client,
+    embed: discord.Embed,
+    context: str,
+    game_slug: str = "lol",
+    scope_type: Optional[str] = None,
+):
+    """Deliver an embed by editing tracked live messages when configured,
+    otherwise fall back to sending/broadcasting the embed to guilds.
+
+    `scope_type` controls which of the canonical live message slots to edit
+    (e.g. "upcoming", "running", "results"). `game_slug` is passed as the
+    scope_key so messages can be separated per-game.
+    """
+    if not bot:
+        return
+
+    guilds_to_broadcast = []
+
+    async with get_async_session() as session:
+        for guild in list(bot.guilds):
+            try:
+                cfg = await get_guild_config_async(session, getattr(guild, "id", None))
+                if cfg and cfg.enabled_games:
+                    allowed = [g.strip() for g in cfg.enabled_games.split(",") if g.strip()]
+                    if allowed and game_slug not in allowed:
+                        continue
+
+                # Query the live message for the appropriate scope (per-game)
+                live = await get_live_message_async(
+                    session, getattr(guild, "id", None), scope_type, game_slug
+                )
+
+                channel_id = None
+                if cfg and cfg.live_updates_channel_id:
+                    channel_id = cfg.live_updates_channel_id
+                elif live and live.channel_id:
+                    channel_id = live.channel_id
+
+                if channel_id is None:
+                    guilds_to_broadcast.append(guild)
+                    continue
+
+                try:
+                    channel = guild.get_channel(channel_id)
+                    if channel is None:
+                        channel = await guild.fetch_channel(channel_id)
+                except Exception:
+                    logger.exception("Failed to resolve channel %s for guild %s", channel_id, getattr(guild, "id", None))
+                    guilds_to_broadcast.append(guild)
+                    continue
+
+                if live and live.message_id:
+                    try:
+                        msg = await channel.fetch_message(live.message_id)
+                        await msg.edit(embed=embed)
+                        continue
+                    except discord.NotFound:
+                        pass
+                    except Exception:
+                        logger.exception("Failed to edit live message %s in guild %s", getattr(live, "message_id", None), getattr(guild, "id", None))
+                        guilds_to_broadcast.append(guild)
+                        continue
+
+                try:
+                    new_msg = await channel.send(embed=embed)
+                    # Persist the canonical live message pointer for this guild
+                    # and scope (scope_type + game_slug).
+                    await set_live_message_async(
+                        session,
+                        getattr(guild, "id", None),
+                        channel.id,
+                        new_msg.id,
+                        scope_type or "guild_live",
+                        game_slug,
+                    )
+                    continue
+                except Exception:
+                    logger.exception("Failed to send live update to guild %s in channel %s", getattr(guild, "id", None), channel_id)
+                    guilds_to_broadcast.append(guild)
+            except Exception:
+                logger.exception("Unexpected error while delivering to guild %s", getattr(guild, "id", None))
+                guilds_to_broadcast.append(guild)
+
+    if not guilds_to_broadcast:
+        return
+
+    if len(guilds_to_broadcast) == len(list(bot.guilds)):
+        await broadcast_embed_to_guilds(bot, embed, context)
+        return
+
+    for idx, guild in enumerate(guilds_to_broadcast):
+        try:
+            await send_announcement(guild, embed)
+            logger.info("Sent %s to guild %s.", context, guild.id)
+        except Exception as e:
+            logger.error("Failed to send %s to guild %s: %s", context, guild.id, e)
+        if (idx + 1) % 3 == 0:
+            await asyncio.sleep(0)
+
+
 # Global instance
 batcher = NotificationBatcher()
+
+
+async def update_upcoming_live_messages() -> None:
+    """
+    Rebuild and deliver the "upcoming" live message for each configured
+    default game. This job is idempotent and uses the database as the
+    source-of-truth for upcoming matches.
+    """
+    bot = get_bot_instance()
+    if not bot:
+        return
+
+    from src.config import DEFAULT_GAMES
+
+    games = DEFAULT_GAMES or ["lol"]
+
+    async with get_async_session() as session:
+        for game in games:
+            # Fetch upcoming matches for this game (next 25)
+            now = datetime.now(timezone.utc)
+            stmt = (
+                select(Match)
+                .options(selectinload(Match.contest))
+                .where(Match.game == game)
+                .where(Match.status == "upcoming")
+                .where(Match.scheduled_time >= now)
+                .order_by(Match.scheduled_time)
+                .limit(25)
+            )
+            matches = (await session.exec(stmt)).all()
+            if not matches:
+                continue
+
+            # Build data tuples expected by _populate_list_embed: (match, team1, team2)
+            teams_map = await _bulk_fetch_teams(session, matches)
+            data = []
+            for m in matches:
+                t1, t2 = _resolve_teams(m, teams_map)
+                data.append((m, t1, t2))
+
+            # Build a simple upcoming embed using the same formatting as reminders
+            embed = discord.Embed(
+                title="⚔️ Upcoming Matches",
+                description="Matches coming up soon:",
+                color=discord.Color.blue(),
+                timestamp=datetime.now(timezone.utc),
+            )
+            embed = _populate_list_embed(embed, data, lambda d: f"**{d[0].team1}** vs **{d[0].team2}** <t:{int(d[0].scheduled_time.timestamp())}:R>")
+
+            context = f"upcoming live message for {len(matches)} matches"
+            await _deliver_embed(bot, embed, context, game, scope_type="upcoming")

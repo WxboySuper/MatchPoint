@@ -6,6 +6,7 @@ from typing import Optional
 import discord
 
 from src.bot_instance import get_bot_instance
+from src.crud import get_guild_config, get_live_message, set_live_message
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +173,21 @@ async def get_announcement_channel(
         A discord.TextChannel suitable for announcements, or None if
             none could be found or created.
     """
+    # 1) If a GuildConfig exists, prefer the configured announcement channel
+    try:
+        # Synchronous path: many command handlers call this from sync context
+        from src.db import get_session
+
+        with get_session() as session:
+            cfg = get_guild_config(session, getattr(guild, "id", None))
+            if cfg and cfg.announcement_channel_id:
+                ch = discord.utils.get(guild.text_channels, id=cfg.announcement_channel_id)
+                if ch and _can_send(ch, _get_bot_member(guild)):
+                    return ch
+    except Exception:
+        # Fall back to existing discovery logic
+        logger.debug("Guild config lookup failed; falling back to discovery")
+
     if existing := _find_existing_channel(guild):
         return existing
 
