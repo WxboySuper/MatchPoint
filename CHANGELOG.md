@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Persistent Live Messages (per-guild, per-game):** Implemented three canonical live message slots per guild and game (`upcoming`, `running`, `results`). Notifications now edit those existing messages in-place when possible instead of posting new messages for each notification. Delivery falls back to announcement channels when editing isn't possible. (See `src/crud/live_update_message.py`, `src/notification_batcher.py`)
 
+- **Announcements persistence:** The announce flow now persists admin announcement messages as a scoped live message (`scope_type="announcement"`) so the bot can reference or update admin announcements later (`src/commands/announce.py`).
+
 ### Fixed
 
 - **Compatibility:** Fixed import-time compatibility for the `setup` command so command modules import cleanly in test environments.
