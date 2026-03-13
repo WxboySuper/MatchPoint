@@ -130,6 +130,13 @@ def test_build_running_embed_keeps_empty_state_message():
     assert embed.description == "No matches are currently live."
 
 
+def test_build_upcoming_embed_uses_count_based_empty_state_message():
+    embed = live_messages._build_upcoming_embed("cs2", [])
+
+    assert embed.title == "CS2 Upcoming Matches"
+    assert embed.description == "No upcoming matches are scheduled."
+
+
 @pytest.mark.asyncio
 async def test_fetch_running_matches_excludes_finished_results():
     engine = create_engine("sqlite:///:memory:")

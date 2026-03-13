@@ -2,13 +2,16 @@
 Discord command for syncing matches from PandaScore API.
 """
 
+import asyncio
 import io
 import logging
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from src.auth import is_admin
+from src.notification_batcher import update_upcoming_live_messages
 from src.pandascore_sync import perform_pandascore_sync
 
 logger = logging.getLogger(__name__)
@@ -30,7 +33,7 @@ class SyncMatches(commands.Cog):
         ),
     )
     @is_admin()
-    async def sync_matches(self, interaction: discord.Interaction):
+    async def sync_matches(self, interaction: discord.Interaction) -> None:
         """
         Performs a full sync of matches from PandaScore
         and returns the logs as a file for debugging.
@@ -52,6 +55,8 @@ class SyncMatches(commands.Cog):
 
         try:
             summary = await perform_pandascore_sync()
+            if summary is not None:
+                await update_upcoming_live_messages()
 
             # Retrieve the logs
             log_contents = log_stream.getvalue()
@@ -88,6 +93,34 @@ class SyncMatches(commands.Cog):
             root_logger.removeHandler(handler)
             root_logger.setLevel(original_level)
             log_stream.close()
+
+    @app_commands.command(
+        name="refresh-live-messages",
+        description="Force a refresh of the canonical live messages.",
+    )
+    @is_admin()
+    async def refresh_live_messages(
+        self, interaction: discord.Interaction
+    ) -> None:
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        try:
+            await update_upcoming_live_messages()
+        except (asyncio.TimeoutError, discord.HTTPException):
+            logger.exception(
+                "Failed refreshing live messages manually for guild %s",
+                getattr(getattr(interaction, "guild", None), "id", None),
+            )
+            await interaction.followup.send(
+                "Live message refresh failed. Check logs for details.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.followup.send(
+            "Live messages refreshed.",
+            ephemeral=True,
+        )
 
 
 async def setup(bot: commands.Bot):

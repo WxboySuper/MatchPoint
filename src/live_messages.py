@@ -22,10 +22,10 @@ from src.parsers.factory import get_supported_game_slugs
 logger = logging.getLogger(__name__)
 
 LIVE_MESSAGE_SCOPES = ("upcoming", "running", "results")
-UPCOMING_WINDOW_DAYS = 5
-UPCOMING_MATCH_LIMIT = 25
+UPCOMING_MATCH_LIMIT = 10
 RUNNING_MATCH_LIMIT = 25
 RESULTS_MATCH_LIMIT = 10
+RUNNING_MATCH_STALE_HOURS = 24
 GAME_DISPLAY_NAMES = {
     "lol": "LoL",
     "cs2": "CS2",
@@ -348,7 +348,6 @@ async def _build_live_message_embed(
 
 async def _fetch_upcoming_matches(game: str) -> list[Match]:
     now = datetime.now(timezone.utc)
-    cutoff = now + timedelta(days=UPCOMING_WINDOW_DAYS)
     async with get_async_session() as session:
         stmt = (
             select(Match)
@@ -356,7 +355,6 @@ async def _fetch_upcoming_matches(game: str) -> list[Match]:
             .where(Match.game == game)
             .where(Match.status == "not_started")
             .where(Match.scheduled_time >= now)
-            .where(Match.scheduled_time <= cutoff)
             .order_by(Match.scheduled_time, Match.id)
             .limit(UPCOMING_MATCH_LIMIT)
         )
@@ -364,6 +362,9 @@ async def _fetch_upcoming_matches(game: str) -> list[Match]:
 
 
 async def _fetch_running_matches(game: str) -> list[Match]:
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        hours=RUNNING_MATCH_STALE_HOURS
+    )
     async with get_async_session() as session:
         stmt = (
             select(Match)
@@ -371,6 +372,7 @@ async def _fetch_running_matches(game: str) -> list[Match]:
             .outerjoin(Result, Result.match_id == Match.id)
             .where(Match.game == game)
             .where(Match.status == "running")
+            .where(Match.scheduled_time >= cutoff)
             .where(Result.id.is_(None))
             .order_by(Match.scheduled_time, Match.id)
             .limit(RUNNING_MATCH_LIMIT)
@@ -399,7 +401,7 @@ def _build_upcoming_embed(
         matches,
         LiveEmbedSpec(
             title_suffix="Upcoming Matches",
-            empty_description="No matches are scheduled in the next 5 days.",
+            empty_description="No upcoming matches are scheduled.",
             formatter=_format_upcoming_line,
             color=discord.Color.blue(),
         ),

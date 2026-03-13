@@ -161,7 +161,15 @@ def _update_match_from_data(
     logger.info(
         "Updating existing match (PandaScore ID: %s)", match.pandascore_id
     )
-    for key in ["team1", "team2", "team1_id", "team2_id", "best_of", "status"]:
+    for key in [
+        "team1",
+        "team2",
+        "team1_id",
+        "team2_id",
+        "best_of",
+        "status",
+        "game",
+    ]:
         if key in match_data and match_data[key] is not None:
             setattr(match, key, match_data[key])
 
