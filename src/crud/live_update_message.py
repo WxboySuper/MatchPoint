@@ -25,6 +25,54 @@ class LiveMessagePayload:
     scope_key: Optional[str] = None
 
 
+@dataclass
+class _LiveMessageOperation:
+    target: LiveMessageTarget
+    payload: LiveMessagePayload
+
+    @classmethod
+    def from_args(
+        cls,
+        *args: Union[int, LiveMessageTarget],
+        payload: Optional[LiveMessagePayload] = None,
+    ) -> "_LiveMessageOperation":
+        target, normalized_payload = _prepare_live_message(args, payload)
+        return cls(target=target, payload=normalized_payload)
+
+    def _upsert_record(
+        self, rec: Optional[LiveUpdateMessage]
+    ) -> tuple[LiveUpdateMessage, bool]:
+        return _get_or_create_live_message(rec, self.target, self.payload)
+
+    def persist(self, session) -> LiveUpdateMessage:
+        rec = get_live_message(
+            session,
+            self.target.guild_id,
+            self.payload.scope_type,
+            self.payload.scope_key,
+        )
+        rec, is_new = self._upsert_record(rec)
+        if is_new:
+            session.add(rec)
+        session.commit()
+        session.refresh(rec)
+        return rec
+
+    async def persist_async(self, session: AsyncSession) -> LiveUpdateMessage:
+        rec = await get_live_message_async(
+            session,
+            self.target.guild_id,
+            self.payload.scope_type,
+            self.payload.scope_key,
+        )
+        rec, is_new = self._upsert_record(rec)
+        if is_new:
+            session.add(rec)
+        await session.commit()
+        await session.refresh(rec)
+        return rec
+
+
 def _normalize_payload(
     payload: Optional[LiveMessagePayload] = None,
     legacy_scope: Tuple[Optional[str], ...] = (),
@@ -116,38 +164,6 @@ def _prepare_live_message(
     return target, normalized_payload
 
 
-def _persist_live_message_sync(
-    session,
-    target: LiveMessageTarget,
-    payload: LiveMessagePayload,
-) -> LiveUpdateMessage:
-    rec = get_live_message(
-        session, target.guild_id, payload.scope_type, payload.scope_key
-    )
-    rec, is_new = _get_or_create_live_message(rec, target, payload)
-    if is_new:
-        session.add(rec)
-    session.commit()
-    session.refresh(rec)
-    return rec
-
-
-async def _persist_live_message_async(
-    session: AsyncSession,
-    target: LiveMessageTarget,
-    payload: LiveMessagePayload,
-) -> LiveUpdateMessage:
-    rec = await get_live_message_async(
-        session, target.guild_id, payload.scope_type, payload.scope_key
-    )
-    rec, is_new = _get_or_create_live_message(rec, target, payload)
-    if is_new:
-        session.add(rec)
-    await session.commit()
-    await session.refresh(rec)
-    return rec
-
-
 def set_live_message_v2(
     session,
     target: LiveMessageTarget,
@@ -194,8 +210,8 @@ def set_live_message(
     payload: Optional[LiveMessagePayload] = None,
 ) -> LiveUpdateMessage:
     """Persist a live message using either target or legacy arguments."""
-    target, normalized_payload = _prepare_live_message(args, payload)
-    return _persist_live_message_sync(session, target, normalized_payload)
+    operation = _LiveMessageOperation.from_args(*args, payload=payload)
+    return operation.persist(session)
 
 
 def delete_live_message(
@@ -233,10 +249,8 @@ async def set_live_message_async(
     payload: Optional[LiveMessagePayload] = None,
 ) -> LiveUpdateMessage:
     """Async persist helper supporting typed and legacy arguments."""
-    target, normalized_payload = _prepare_live_message(args, payload)
-    return await _persist_live_message_async(
-        session, target, normalized_payload
-    )
+    operation = _LiveMessageOperation.from_args(*args, payload=payload)
+    return await operation.persist_async(session)
 
 
 async def delete_live_message_async(

@@ -1,7 +1,8 @@
+from dataclasses import dataclass
+from datetime import datetime, timezone
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone
 
 import src.notification_batcher as nb
 import src.notification_delivery as delivery
@@ -9,20 +10,23 @@ from src.notification_batcher import NotificationBatcher
 from src.models import Match, Contest
 
 
+@dataclass
+class _SessionMocks:
+    batcher: AsyncMock
+    delivery: AsyncMock
+
+
+@dataclass
+class _FetchMocks:
+    matches: AsyncMock
+    teams: AsyncMock
+    resolver: MagicMock
+
+
+@dataclass
 class _BatcherMockBundle:
-    def __init__(
-        self,
-        batcher_session_cls,
-        delivery_session_cls,
-        bulk_matches,
-        bulk_teams,
-        resolve_teams,
-    ):
-        self.batcher_session_cls = batcher_session_cls
-        self.delivery_session_cls = delivery_session_cls
-        self.bulk_matches = bulk_matches
-        self.bulk_teams = bulk_teams
-        self.resolve_teams = resolve_teams
+    sessions: _SessionMocks
+    fetchers: _FetchMocks
 
 
 def _build_live_message_test_match(match_id: int) -> Match:
@@ -45,15 +49,13 @@ def _configure_batcher_mocks(
     mock_session,
     match,
 ) -> None:
-    bundle.batcher_session_cls.return_value.__aenter__.return_value = (
+    bundle.sessions.batcher.return_value.__aenter__.return_value = mock_session
+    bundle.sessions.delivery.return_value.__aenter__.return_value = (
         mock_session
     )
-    bundle.delivery_session_cls.return_value.__aenter__.return_value = (
-        mock_session
-    )
-    bundle.bulk_matches.return_value = [match]
-    bundle.bulk_teams.return_value = {}
-    bundle.resolve_teams.return_value = (None, None)
+    bundle.fetchers.matches.return_value = [match]
+    bundle.fetchers.teams.return_value = {}
+    bundle.fetchers.resolver.return_value = (None, None)
 
 
 @pytest.mark.asyncio
@@ -118,11 +120,15 @@ async def test_scoped_live_message_editing_and_creation():
         return_value=None,
     ):
         bundle = _BatcherMockBundle(
-            mock_batcher_session_cls,
-            mock_delivery_session_cls,
-            mock_bulk_matches,
-            mock_bulk_teams,
-            mock_resolve_teams,
+            sessions=_SessionMocks(
+                batcher=mock_batcher_session_cls,
+                delivery=mock_delivery_session_cls,
+            ),
+            fetchers=_FetchMocks(
+                matches=mock_bulk_matches,
+                teams=mock_bulk_teams,
+                resolver=mock_resolve_teams,
+            ),
         )
 
         _configure_batcher_mocks(
@@ -201,11 +207,15 @@ async def test_mid_series_updates_edit_existing_message():
             ),
         ):
             bundle = _BatcherMockBundle(
-                mock_batcher_session_cls,
-                mock_delivery_session_cls,
-                mock_bulk_matches,
-                mock_bulk_teams,
-                mock_resolve_teams,
+                sessions=_SessionMocks(
+                    batcher=mock_batcher_session_cls,
+                    delivery=mock_delivery_session_cls,
+                ),
+                fetchers=_FetchMocks(
+                    matches=mock_bulk_matches,
+                    teams=mock_bulk_teams,
+                    resolver=mock_resolve_teams,
+                ),
             )
 
             _configure_batcher_mocks(
