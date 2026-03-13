@@ -8,7 +8,6 @@ import src.live_messages as live_messages
 
 @pytest.mark.asyncio
 async def test_refresh_scope_creates_missing_live_message():
-    session = AsyncMock()
     guild = MagicMock()
     guild.id = 111
     guild.me = None
@@ -29,7 +28,7 @@ async def test_refresh_scope_creates_missing_live_message():
 
     with patch.object(
         live_messages,
-        "get_live_message_async",
+        "_load_live_record",
         new_callable=AsyncMock,
         return_value=None,
     ), patch.object(
@@ -39,31 +38,32 @@ async def test_refresh_scope_creates_missing_live_message():
         return_value=embed,
     ), patch.object(
         live_messages,
-        "set_live_message_async",
+        "_persist_live_message_pointer",
         new_callable=AsyncMock,
-    ) as mock_set_live:
+    ) as mock_persist:
         await live_messages._refresh_guild_scope(
-            session,
-            guild,
             cfg,
-            "lol",
-            "upcoming",
+            live_messages.LiveMessageScope(
+                guild=guild,
+                game="lol",
+                scope="upcoming",
+            ),
         )
 
     channel.send.assert_awaited_once_with(embed=embed)
-    mock_set_live.assert_awaited_once_with(
-        session,
-        guild.id,
+    mock_persist.assert_awaited_once_with(
+        live_messages.LiveMessageScope(
+            guild=guild,
+            game="lol",
+            scope="upcoming",
+        ),
         channel.id,
         sent_message.id,
-        "upcoming",
-        "lol",
     )
 
 
 @pytest.mark.asyncio
 async def test_refresh_scope_edits_existing_live_message():
-    session = AsyncMock()
     guild = MagicMock()
     guild.id = 222
     guild.me = None
@@ -85,7 +85,7 @@ async def test_refresh_scope_edits_existing_live_message():
 
     with patch.object(
         live_messages,
-        "get_live_message_async",
+        "_load_live_record",
         new_callable=AsyncMock,
         return_value=live_record,
     ), patch.object(
@@ -95,26 +95,28 @@ async def test_refresh_scope_edits_existing_live_message():
         return_value=embed,
     ), patch.object(
         live_messages,
-        "set_live_message_async",
+        "_persist_live_message_pointer",
         new_callable=AsyncMock,
-    ) as mock_set_live:
+    ) as mock_persist:
         await live_messages._refresh_guild_scope(
-            session,
-            guild,
             cfg,
-            "lol",
-            "running",
+            live_messages.LiveMessageScope(
+                guild=guild,
+                game="lol",
+                scope="running",
+            ),
         )
 
     fetched_message.edit.assert_awaited_once_with(embed=embed)
     channel.send.assert_not_called()
-    mock_set_live.assert_awaited_once_with(
-        session,
-        guild.id,
+    mock_persist.assert_awaited_once_with(
+        live_messages.LiveMessageScope(
+            guild=guild,
+            game="lol",
+            scope="running",
+        ),
         channel.id,
         live_record.message_id,
-        "running",
-        "lol",
     )
 
 

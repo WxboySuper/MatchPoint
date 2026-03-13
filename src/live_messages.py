@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -31,29 +32,32 @@ GAME_DISPLAY_NAMES = {
 }
 
 
+@dataclass(frozen=True)
+class LiveMessageScope:
+    guild: discord.Guild
+    game: str
+    scope: str
+
+
+@dataclass(frozen=True)
+class LiveMessageTarget:
+    channel: object
+    live_record: Optional[object]
+    scope: LiveMessageScope
+
+
 def normalize_enabled_games(
     raw_games: Optional[str],
     *,
     default_games: Optional[Sequence[str]] = None,
 ) -> list[str]:
     supported = set(get_supported_game_slugs())
-    defaults = list(default_games or DEFAULT_GAMES or ("lol",))
+    defaults = _get_default_supported_games(default_games, supported)
     if not raw_games:
-        return [game for game in defaults if game in supported] or ["lol"]
+        return defaults
 
-    seen = set()
-    normalized = []
-    for raw in raw_games.split(","):
-        game = raw.strip().lower()
-        if not game or game not in supported or game in seen:
-            continue
-        seen.add(game)
-        normalized.append(game)
-    return (
-        normalized
-        or [game for game in defaults if game in supported]
-        or ["lol"]
-    )
+    normalized = _parse_supported_games(raw_games, supported)
+    return normalized or defaults
 
 
 def format_enabled_games(raw_games: Optional[str]) -> str:
@@ -68,7 +72,7 @@ async def refresh_all_live_messages() -> None:
         return
 
     guilds = getattr(bot, "guilds", None)
-    if not isinstance(guilds, (list, tuple, set)):
+    if guilds is None:
         return
 
     for guild in guilds:
@@ -81,7 +85,7 @@ async def refresh_live_messages_for_games(games: Iterable[str]) -> None:
         return
 
     guilds = getattr(bot, "guilds", None)
-    if not isinstance(guilds, (list, tuple, set)):
+    if guilds is None:
         return
 
     target_games = {
@@ -99,62 +103,120 @@ async def refresh_live_messages_for_games(games: Iterable[str]) -> None:
 async def refresh_live_messages_for_guild(
     guild: discord.Guild, games: Optional[Iterable[str]] = None
 ) -> None:
-    async with get_async_session() as session:
-        cfg = await get_guild_config_async(session, getattr(guild, "id", None))
-        enabled_games = set(
-            normalize_enabled_games(getattr(cfg, "enabled_games", None))
-        )
-        target_games = enabled_games
-        if games is not None:
-            requested = {game.strip().lower() for game in games if game}
-            target_games = enabled_games.intersection(requested)
+    cfg = await _load_guild_config(guild)
+    enabled_games = set(
+        normalize_enabled_games(getattr(cfg, "enabled_games", None))
+    )
+    target_games = enabled_games
+    if games is not None:
+        requested = {game.strip().lower() for game in games if game}
+        target_games = enabled_games.intersection(requested)
 
-        if not target_games:
-            return
+    if not target_games:
+        return
 
-        for game in sorted(target_games):
-            for scope in LIVE_MESSAGE_SCOPES:
-                try:
-                    await _refresh_guild_scope(
-                        session,
-                        guild,
-                        cfg,
-                        game,
-                        scope,
-                    )
-                except Exception:
-                    logger.exception(
-                        "Failed refreshing %s live message for guild %s (%s)",
-                        scope,
-                        getattr(guild, "id", None),
-                        game,
-                    )
+    for game in sorted(target_games):
+        for scope in LIVE_MESSAGE_SCOPES:
+            try:
+                await _refresh_guild_scope(
+                    cfg,
+                    LiveMessageScope(guild=guild, game=game, scope=scope),
+                )
+            except Exception:
+                logger.exception(
+                    "Failed refreshing %s live message for guild %s (%s)",
+                    scope,
+                    getattr(guild, "id", None),
+                    game,
+                )
 
 
 async def _refresh_guild_scope(
-    session, guild, cfg, game: str, scope: str
+    cfg,
+    live_scope: LiveMessageScope,
 ) -> None:
-    live_record = await get_live_message_async(session, guild.id, scope, game)
-    channel = await _resolve_live_channel(guild, cfg, live_record)
+    live_record = await _load_live_record(live_scope)
+    channel = await _resolve_live_channel(
+        live_scope.guild,
+        cfg,
+        live_record,
+    )
     if channel is None:
         logger.debug(
             "Skipping %s live message for guild %s (%s): no writable channel",
-            scope,
-            getattr(guild, "id", None),
-            game,
+            live_scope.scope,
+            getattr(live_scope.guild, "id", None),
+            live_scope.game,
         )
         return
 
-    embed = await _build_live_message_embed(session, game, scope)
+    embed = await _build_live_message_embed(live_scope)
     await _edit_or_create_live_message(
-        session,
-        guild,
-        channel,
-        live_record,
+        LiveMessageTarget(
+            channel=channel,
+            live_record=live_record,
+            scope=live_scope,
+        ),
         embed,
-        scope,
-        game,
     )
+
+
+async def _load_guild_config(guild: discord.Guild):
+    async with get_async_session() as session:
+        return await get_guild_config_async(
+            session,
+            getattr(guild, "id", None),
+        )
+
+
+async def _load_live_record(live_scope: LiveMessageScope):
+    async with get_async_session() as session:
+        return await get_live_message_async(
+            session,
+            live_scope.guild.id,
+            live_scope.scope,
+            live_scope.game,
+        )
+
+
+async def _persist_live_message_pointer(
+    live_scope: LiveMessageScope, channel_id: int, message_id: int
+) -> None:
+    async with get_async_session() as session:
+        await set_live_message_async(
+            session,
+            live_scope.guild.id,
+            channel_id,
+            message_id,
+            live_scope.scope,
+            live_scope.game,
+        )
+
+
+def _get_default_supported_games(
+    default_games: Optional[Sequence[str]],
+    supported: set[str],
+) -> list[str]:
+    defaults = list(default_games or DEFAULT_GAMES or ("lol",))
+    filtered = [game for game in defaults if game in supported]
+    return filtered or ["lol"]
+
+
+def _parse_supported_games(
+    raw_games: str,
+    supported: set[str],
+) -> list[str]:
+    seen = set()
+    normalized = []
+    for raw in raw_games.split(","):
+        game = raw.strip().lower()
+        if not game or game in seen:
+            continue
+        if game not in supported:
+            continue
+        seen.add(game)
+        normalized.append(game)
+    return normalized
 
 
 def _get_preferred_live_channel_id(cfg, live_record) -> Optional[int]:
@@ -207,160 +269,172 @@ def _channel_supports_live_messages(channel, guild) -> bool:
 
 
 async def _edit_or_create_live_message(
-    session,
-    guild,
-    channel,
-    live_record,
+    target: LiveMessageTarget,
     embed: discord.Embed,
-    scope: str,
-    game: str,
 ) -> None:
-    should_try_edit = bool(
-        live_record
-        and getattr(live_record, "message_id", None)
-        and getattr(live_record, "channel_id", None)
-        == getattr(channel, "id", None)
-    )
-    if should_try_edit:
+    if _can_edit_tracked_message(target):
         try:
-            message = await channel.fetch_message(live_record.message_id)
+            message = await target.channel.fetch_message(
+                target.live_record.message_id
+            )
             await message.edit(embed=embed)
-            await set_live_message_async(
-                session,
-                guild.id,
-                channel.id,
+            await _persist_live_message_pointer(
+                target.scope,
+                target.channel.id,
                 message.id,
-                scope,
-                game,
             )
             return
         except discord.NotFound:
             logger.info(
                 "Tracked live message %s missing in guild %s; recreating",
-                getattr(live_record, "message_id", None),
-                guild.id,
+                getattr(target.live_record, "message_id", None),
+                target.scope.guild.id,
             )
         except Exception:
             logger.exception(
                 "Failed editing %s live message for guild %s (%s)",
-                scope,
-                guild.id,
-                game,
+                target.scope.scope,
+                target.scope.guild.id,
+                target.scope.game,
             )
             return
 
     try:
-        message = await channel.send(embed=embed)
+        message = await target.channel.send(embed=embed)
     except Exception:
         logger.exception(
             "Failed creating %s live message for guild %s (%s) in channel %s",
-            scope,
-            guild.id,
-            game,
-            getattr(channel, "id", None),
+            target.scope.scope,
+            target.scope.guild.id,
+            target.scope.game,
+            getattr(target.channel, "id", None),
         )
         return
 
-    await set_live_message_async(
-        session,
-        guild.id,
-        channel.id,
+    await _persist_live_message_pointer(
+        target.scope,
+        target.channel.id,
         message.id,
-        scope,
-        game,
+    )
+
+
+def _can_edit_tracked_message(target: LiveMessageTarget) -> bool:
+    return bool(
+        target.live_record
+        and getattr(target.live_record, "message_id", None)
+        and getattr(target.live_record, "channel_id", None)
+        == getattr(target.channel, "id", None)
     )
 
 
 async def _build_live_message_embed(
-    session, game: str, scope: str
+    live_scope: LiveMessageScope,
 ) -> discord.Embed:
-    if scope == "upcoming":
-        matches = await _fetch_upcoming_matches(session, game)
-        return _build_upcoming_embed(game, matches)
-    if scope == "running":
-        matches = await _fetch_running_matches(session, game)
-        return _build_running_embed(game, matches)
-    results = await _fetch_recent_results(session, game)
-    return _build_results_embed(game, results)
+    if live_scope.scope == "upcoming":
+        matches = await _fetch_upcoming_matches(live_scope.game)
+        return _build_upcoming_embed(live_scope.game, matches)
+    if live_scope.scope == "running":
+        matches = await _fetch_running_matches(live_scope.game)
+        return _build_running_embed(live_scope.game, matches)
+    results = await _fetch_recent_results(live_scope.game)
+    return _build_results_embed(live_scope.game, results)
 
 
-async def _fetch_upcoming_matches(session, game: str) -> list[Match]:
+async def _fetch_upcoming_matches(game: str) -> list[Match]:
     now = datetime.now(timezone.utc)
     cutoff = now + timedelta(days=UPCOMING_WINDOW_DAYS)
-    stmt = (
-        select(Match)
-        .options(selectinload(Match.contest))
-        .where(Match.game == game)
-        .where(Match.status == "not_started")
-        .where(Match.scheduled_time >= now)
-        .where(Match.scheduled_time <= cutoff)
-        .order_by(Match.scheduled_time, Match.id)
-        .limit(UPCOMING_MATCH_LIMIT)
-    )
-    return list((await session.exec(stmt)).all())
+    async with get_async_session() as session:
+        stmt = (
+            select(Match)
+            .options(selectinload(Match.contest))
+            .where(Match.game == game)
+            .where(Match.status == "not_started")
+            .where(Match.scheduled_time >= now)
+            .where(Match.scheduled_time <= cutoff)
+            .order_by(Match.scheduled_time, Match.id)
+            .limit(UPCOMING_MATCH_LIMIT)
+        )
+        return list((await session.exec(stmt)).all())
 
 
-async def _fetch_running_matches(session, game: str) -> list[Match]:
-    stmt = (
-        select(Match)
-        .options(selectinload(Match.contest))
-        .where(Match.game == game)
-        .where(Match.status == "running")
-        .order_by(Match.scheduled_time, Match.id)
-        .limit(RUNNING_MATCH_LIMIT)
-    )
-    return list((await session.exec(stmt)).all())
+async def _fetch_running_matches(game: str) -> list[Match]:
+    async with get_async_session() as session:
+        stmt = (
+            select(Match)
+            .options(selectinload(Match.contest))
+            .where(Match.game == game)
+            .where(Match.status == "running")
+            .order_by(Match.scheduled_time, Match.id)
+            .limit(RUNNING_MATCH_LIMIT)
+        )
+        return list((await session.exec(stmt)).all())
 
 
-async def _fetch_recent_results(
-    session, game: str
-) -> list[tuple[Match, Result]]:
-    stmt = (
-        select(Match, Result)
-        .join(Result, Result.match_id == Match.id)
-        .options(selectinload(Match.contest))
-        .where(Match.game == game)
-        .order_by(Match.scheduled_time.desc(), Match.id.desc())
-        .limit(RESULTS_MATCH_LIMIT)
-    )
-    return list((await session.exec(stmt)).all())
+async def _fetch_recent_results(game: str) -> list[tuple[Match, Result]]:
+    async with get_async_session() as session:
+        stmt = (
+            select(Match, Result)
+            .join(Result, Result.match_id == Match.id)
+            .options(selectinload(Match.contest))
+            .where(Match.game == game)
+            .order_by(Match.scheduled_time.desc(), Match.id.desc())
+            .limit(RESULTS_MATCH_LIMIT)
+        )
+        return list((await session.exec(stmt)).all())
 
 
 def _build_upcoming_embed(
     game: str, matches: Sequence[Match]
 ) -> discord.Embed:
-    title = f"{_game_display_name(game)} Upcoming Matches"
-    if not matches:
-        description = "No matches are scheduled in the next 5 days."
-    else:
-        description = "\n\n".join(
-            _format_upcoming_line(match) for match in matches
-        )
-    return _build_live_embed(title, description, discord.Color.blue())
+    return _build_scoped_embed(
+        game,
+        matches,
+        title_suffix="Upcoming Matches",
+        empty_description="No matches are scheduled in the next 5 days.",
+        formatter=_format_upcoming_line,
+        color=discord.Color.blue(),
+    )
 
 
 def _build_running_embed(game: str, matches: Sequence[Match]) -> discord.Embed:
-    title = f"{_game_display_name(game)} Live Matches"
-    if not matches:
-        description = "No matches are currently live."
-    else:
-        description = "\n\n".join(
-            _format_running_line(match) for match in matches
-        )
-    return _build_live_embed(title, description, discord.Color.orange())
+    return _build_scoped_embed(
+        game,
+        matches,
+        title_suffix="Live Matches",
+        empty_description="No matches are currently live.",
+        formatter=_format_running_line,
+        color=discord.Color.orange(),
+    )
 
 
 def _build_results_embed(
     game: str, results: Sequence[tuple[Match, Result]]
 ) -> discord.Embed:
-    title = f"{_game_display_name(game)} Recent Results"
-    if not results:
-        description = "No recent results to show yet."
+    return _build_scoped_embed(
+        game,
+        results,
+        title_suffix="Recent Results",
+        empty_description="No recent results to show yet.",
+        formatter=_format_result_entry,
+        color=discord.Color.gold(),
+    )
+
+
+def _build_scoped_embed(
+    game: str,
+    entries: Sequence,
+    *,
+    title_suffix: str,
+    empty_description: str,
+    formatter,
+    color: discord.Color,
+) -> discord.Embed:
+    title = f"{_game_display_name(game)} {title_suffix}"
+    if not entries:
+        description = empty_description
     else:
-        description = "\n\n".join(
-            _format_result_line(match, result) for match, result in results
-        )
-    return _build_live_embed(title, description, discord.Color.gold())
+        description = "\n\n".join(formatter(entry) for entry in entries)
+    return _build_live_embed(title, description, color)
 
 
 def _build_live_embed(
@@ -402,6 +476,11 @@ def _format_result_line(match: Match, result: Result) -> str:
         f"{contest_name} • Winner: ||{winner}|| • "
         f"Score: ||{score}||"
     )
+
+
+def _format_result_entry(entry: tuple[Match, Result]) -> str:
+    match, result = entry
+    return _format_result_line(match, result)
 
 
 def _contest_name(match: Match) -> str:

@@ -18,6 +18,7 @@ from src.live_messages import (
 from src.models import Match, Pick, Result, Team
 
 logger = logging.getLogger(__name__)
+_upcoming_live_update_lock = asyncio.Lock()
 
 
 class BatchProcessorSpec:
@@ -556,4 +557,11 @@ batcher = NotificationBatcher()
 
 async def update_upcoming_live_messages() -> None:
     """Refresh all canonical live messages from database state."""
-    await refresh_all_live_messages()
+    if _upcoming_live_update_lock.locked():
+        logger.info(
+            "Skipping live message refresh; another refresh is running."
+        )
+        return
+
+    async with _upcoming_live_update_lock:
+        await refresh_all_live_messages()
