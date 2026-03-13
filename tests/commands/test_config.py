@@ -1,8 +1,8 @@
+from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
-from dataclasses import dataclass
 
 import src.commands.config as config_commands
 
@@ -132,9 +132,9 @@ async def test_set_games_rejects_unsupported_slug(mocked_interaction):
 
 
 @pytest.mark.asyncio
-async def test_add_game_updates_enabled_games(mocked_interaction):
-    await _assert_game_command_result(
-        mocked_interaction,
+@pytest.mark.parametrize(
+    "case",
+    [
         _GameCommandCase(
             guild_id=101,
             command_name="add_game",
@@ -144,13 +144,6 @@ async def test_add_game_updates_enabled_games(mocked_interaction):
             expected_games=["lol", "cs2"],
             expected_message="Enabled games: LoL, CS2",
         ),
-    )
-
-
-@pytest.mark.asyncio
-async def test_add_game_handles_unset_enabled_games(mocked_interaction):
-    await _assert_game_command_result(
-        mocked_interaction,
         _GameCommandCase(
             guild_id=111,
             command_name="add_game",
@@ -160,13 +153,6 @@ async def test_add_game_handles_unset_enabled_games(mocked_interaction):
             expected_games=["cs2"],
             expected_message="Enabled games: CS2",
         ),
-    )
-
-
-@pytest.mark.asyncio
-async def test_remove_game_removes_enabled_slug(mocked_interaction):
-    await _assert_game_command_result(
-        mocked_interaction,
         _GameCommandCase(
             guild_id=202,
             command_name="remove_game",
@@ -176,13 +162,6 @@ async def test_remove_game_removes_enabled_slug(mocked_interaction):
             expected_games=["lol"],
             expected_message="Enabled games: LoL",
         ),
-    )
-
-
-@pytest.mark.asyncio
-async def test_remove_game_filters_stale_games(mocked_interaction):
-    await _assert_game_command_result(
-        mocked_interaction,
         _GameCommandCase(
             guild_id=303,
             command_name="remove_game",
@@ -192,4 +171,10 @@ async def test_remove_game_filters_stale_games(mocked_interaction):
             expected_games=["lol"],
             expected_message="Enabled games: LoL",
         ),
-    )
+    ],
+)
+async def test_game_command_updates_enabled_games(
+    mocked_interaction,
+    case: _GameCommandCase,
+):
+    await _assert_game_command_result(mocked_interaction, case)
