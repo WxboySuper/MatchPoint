@@ -47,41 +47,12 @@ async def poll_live_match_job(match_db_id: int) -> None:
         if not await _should_continue_polling(match, job_id, session=session):
             return
 
-        if not match.pandascore_id:
-            logger.warning(
-                "Match %s has no pandascore_id, cannot poll. Unscheduling.",
-                match.id,
-            )
-            # Ensure any stale Pandascore IDs that referenced this match
-            # are removed from the known-running set to avoid leaks.
-            # If the match no longer has a pandascore_id, remove any stale
-            # entry directly using the reverse mapping (O(1)). This avoids
-            # scanning all known running IDs and issuing a DB query per id.
-            try:
-                try:
-                    await remove_known_running_match_by_match_id(match.id)
-                except Exception:
-                    logger.exception(
-                        (
-                            "Failed to remove stale pandascore mapping for "
-                            "match %s"
-                        ),
-                        match.id,
-                    )
-            except Exception:
-                logger.exception(
-                    (
-                        "Unexpected error removing stale running mapping "
-                        "for match %s"
-                    ),
-                    match.id,
-                )
-
+        if await _handle_missing_pandascore_id(match):
             await _unschedule_job(job_id)
             return
 
-        match_data = await _fetch_match_from_pandascore(match.pandascore_id)
-        if not match_data:
+        match_data = await _fetch_match_data(match)
+        if match_data is None:
             logger.info("No data returned for match %s. Will retry.", match.id)
             return
 
@@ -132,27 +103,8 @@ async def _fetch_running_matches():
         from src.config import DEFAULT_GAMES
 
         games = DEFAULT_GAMES or ["lol"]
-        # Fetch running matches for each configured game concurrently
-        coros = [
-            pandascore_client.fetch_running_matches(game=g) for g in games
-        ]
-        results = await asyncio.gather(*coros, return_exceptions=True)
-
-        combined = []
-        seen = set()
-        for res in results:
-            if isinstance(res, Exception):
-                logger.exception(
-                    "Error fetching running matches for a game: %s", res
-                )
-                continue
-            for m in res:
-                mid = m.get("id")
-                if mid and mid not in seen:
-                    seen.add(mid)
-                    combined.append(m)
-
-        return combined
+        results = await _fetch_running_matches_for_games(games)
+        return _merge_running_match_results(results)
     except Exception:
         logger.exception("Failed to fetch running matches")
         return []
@@ -165,10 +117,7 @@ async def _process_running_matches(session, running_matches):
         committed = await _process_running_match(session, match_data)
         any_committed = any_committed or bool(committed)
 
-    if not any_committed:
-        maybe = session.commit()
-        if inspect.isawaitable(maybe):
-            await maybe
+    await _commit_if_needed(session, any_committed)
 
 
 async def _handle_finished_matches(running_ids):
@@ -185,6 +134,65 @@ async def _handle_finished_matches(running_ids):
     await remove_known_running_matches(finished_ids)
     for pandascore_id in finished_ids:
         await _handle_finished_pandascore_id(pandascore_id)
+
+
+async def _handle_missing_pandascore_id(match) -> bool:
+    if match.pandascore_id:
+        return False
+
+    logger.warning(
+        "Match %s has no pandascore_id, cannot poll. Unscheduling.",
+        match.id,
+    )
+    await _remove_stale_running_mapping(match.id)
+    return True
+
+
+async def _remove_stale_running_mapping(match_id: int) -> None:
+    try:
+        await remove_known_running_match_by_match_id(match_id)
+    except Exception:
+        logger.exception(
+            "Failed to remove stale pandascore mapping for match %s",
+            match_id,
+        )
+
+
+async def _fetch_match_data(match):
+    return await _fetch_match_from_pandascore(match.pandascore_id)
+
+
+async def _fetch_running_matches_for_games(games):
+    coros = [
+        pandascore_client.fetch_running_matches(game=game) for game in games
+    ]
+    return await asyncio.gather(*coros, return_exceptions=True)
+
+
+def _merge_running_match_results(results):
+    combined = []
+    seen = set()
+    for result in results:
+        if isinstance(result, Exception):
+            logger.exception(
+                "Error fetching running matches for a game: %s", result
+            )
+            continue
+        for match_data in result:
+            match_id = match_data.get("id")
+            if match_id and match_id not in seen:
+                seen.add(match_id)
+                combined.append(match_data)
+    return combined
+
+
+async def _commit_if_needed(session, any_committed: bool) -> None:
+    if any_committed:
+        return
+
+    maybe = session.commit()
+    if inspect.isawaitable(maybe):
+        await maybe
 
 
 async def _unschedule_job(job_id: str) -> None:

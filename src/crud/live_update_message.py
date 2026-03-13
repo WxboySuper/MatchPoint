@@ -1,11 +1,20 @@
-from typing import Optional
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Optional, Tuple, Union
+
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
-from datetime import datetime, timezone
 
 from src.models import LiveUpdateMessage
 
-from dataclasses import dataclass
+
+@dataclass
+class LiveMessageTarget:
+    """Container for the guild/channel/message identifiers."""
+
+    guild_id: int
+    channel_id: int
+    message_id: int
 
 
 @dataclass
@@ -16,34 +25,90 @@ class LiveMessagePayload:
     scope_key: Optional[str] = None
 
 
+def _normalize_payload(
+    payload: Optional[LiveMessagePayload] = None,
+    legacy_scope: Tuple[Optional[str], ...] = (),
+    scope_key: Optional[str] = None,
+) -> LiveMessagePayload:
+    """Normalize legacy scope arguments into a payload."""
+    if payload is not None:
+        return payload
+
+    legacy_scope_type = legacy_scope[0] if legacy_scope else "guild_live"
+    legacy_scope_key = legacy_scope[1] if len(legacy_scope) > 1 else scope_key
+    return LiveMessagePayload(
+        scope_type=legacy_scope_type or "guild_live",
+        scope_key=legacy_scope_key,
+    )
+
+
+def _normalize_target(
+    args: Tuple[Union[int, LiveMessageTarget], ...],
+) -> Tuple[LiveMessageTarget, Tuple[Optional[str], ...]]:
+    """Support both target-based and legacy positional call shapes."""
+    if len(args) == 1 and isinstance(args[0], LiveMessageTarget):
+        return args[0], ()
+
+    if len(args) not in {3, 4, 5}:
+        raise TypeError(
+            "Expected LiveMessageTarget or guild_id, channel_id, "
+            "message_id[, scope_type[, scope_key]]"
+        )
+
+    guild_id, channel_id, message_id = args[:3]
+    target = LiveMessageTarget(
+        guild_id=int(guild_id),
+        channel_id=int(channel_id),
+        message_id=int(message_id),
+    )
+    legacy_scope = tuple(args[3:])
+    return target, legacy_scope
+
+
+def _apply_live_message(
+    rec: LiveUpdateMessage,
+    target: LiveMessageTarget,
+    payload: LiveMessagePayload,
+    now: datetime,
+) -> LiveUpdateMessage:
+    rec.guild_id = target.guild_id
+    rec.channel_id = target.channel_id
+    rec.message_id = target.message_id
+    rec.scope_type = payload.scope_type or "guild_live"
+    rec.scope_key = payload.scope_key
+    rec.last_rendered_at = now
+    return rec
+
+
+def _build_live_message(
+    target: LiveMessageTarget, payload: LiveMessagePayload, now: datetime
+) -> LiveUpdateMessage:
+    return LiveUpdateMessage(
+        guild_id=target.guild_id,
+        channel_id=target.channel_id,
+        message_id=target.message_id,
+        scope_type=payload.scope_type or "guild_live",
+        scope_key=payload.scope_key,
+        last_rendered_at=now,
+    )
+
+
 def set_live_message_v2(
     session,
-    guild_id: int,
-    channel_id: int,
-    message_id: int,
+    target: LiveMessageTarget,
     payload: Optional[LiveMessagePayload] = None,
 ) -> LiveUpdateMessage:
-    """Wrapper accepting LiveMessagePayload."""
-    scope_type = payload.scope_type if payload is not None else "guild_live"
-    scope_key = payload.scope_key if payload is not None else None
-    return set_live_message(
-        session, guild_id, channel_id, message_id, scope_type, scope_key
-    )
+    """Persist a live message using typed target/payload containers."""
+    return set_live_message(session, target, payload=payload)
 
 
 async def set_live_message_async_v2(
     session: AsyncSession,
-    guild_id: int,
-    channel_id: int,
-    message_id: int,
+    target: LiveMessageTarget,
     payload: Optional[LiveMessagePayload] = None,
 ) -> LiveUpdateMessage:
-    """Async wrapper accepting LiveMessagePayload."""
-    scope_type = payload.scope_type if payload is not None else "guild_live"
-    scope_key = payload.scope_key if payload is not None else None
-    return await set_live_message_async(
-        session, guild_id, channel_id, message_id, scope_type, scope_key
-    )
+    """Async variant of the typed target/payload API."""
+    return await set_live_message_async(session, target, payload=payload)
 
 
 def get_live_message(
@@ -70,31 +135,33 @@ def get_live_message(
 
 def set_live_message(
     session,
-    guild_id: int,
-    channel_id: int,
-    message_id: int,
-    scope_type: str = "guild_live",
+    *args: Union[int, LiveMessageTarget],
+    payload: Optional[LiveMessagePayload] = None,
+    scope_type: Optional[str] = None,
     scope_key: Optional[str] = None,
 ) -> LiveUpdateMessage:
-    # Find existing record scoped to the provided scope_type/scope_key so
-    # we update the correct canonical message for that scope.
-    rec = get_live_message(session, guild_id, scope_type, scope_key)
+    """Persist a live message using either target or legacy arguments."""
+    target, legacy_scope = _normalize_target(args)
+    normalized_payload = _normalize_payload(
+        payload=payload,
+        legacy_scope=legacy_scope,
+        scope_key=scope_key,
+    )
+    if scope_type is not None and payload is None:
+        normalized_payload.scope_type = scope_type
+
+    rec = get_live_message(
+        session,
+        target.guild_id,
+        normalized_payload.scope_type,
+        normalized_payload.scope_key,
+    )
+    now = datetime.now(timezone.utc)
     if rec is None:
-        rec = LiveUpdateMessage(
-            guild_id=guild_id,
-            channel_id=channel_id,
-            message_id=message_id,
-            scope_type=scope_type,
-            scope_key=scope_key,
-            last_rendered_at=datetime.now(timezone.utc),
-        )
+        rec = _build_live_message(target, normalized_payload, now)
         session.add(rec)
     else:
-        rec.channel_id = channel_id
-        rec.message_id = message_id
-        rec.scope_type = scope_type
-        rec.scope_key = scope_key
-        rec.last_rendered_at = datetime.now(timezone.utc)
+        _apply_live_message(rec, target, normalized_payload, now)
     session.commit()
     session.refresh(rec)
     return rec
@@ -127,35 +194,36 @@ async def get_live_message_async(
 
 async def set_live_message_async(
     session: AsyncSession,
-    guild_id: int,
-    channel_id: int,
-    message_id: int,
-    scope_type: str = "guild_live",
+    *args: Union[int, LiveMessageTarget],
+    payload: Optional[LiveMessagePayload] = None,
+    scope_type: Optional[str] = None,
     scope_key: Optional[str] = None,
 ) -> LiveUpdateMessage:
+    """Async persist helper supporting typed and legacy arguments."""
+    target, legacy_scope = _normalize_target(args)
+    normalized_payload = _normalize_payload(
+        payload=payload,
+        legacy_scope=legacy_scope,
+        scope_key=scope_key,
+    )
+    if scope_type is not None and payload is None:
+        normalized_payload.scope_type = scope_type
+
     rec = await get_live_message_async(
-        session, guild_id, scope_type, scope_key
+        session,
+        target.guild_id,
+        normalized_payload.scope_type,
+        normalized_payload.scope_key,
     )
     now = datetime.now(timezone.utc)
     if rec is None:
-        rec = LiveUpdateMessage(
-            guild_id=guild_id,
-            channel_id=channel_id,
-            message_id=message_id,
-            scope_type=scope_type,
-            scope_key=scope_key,
-            last_rendered_at=now,
-        )
+        rec = _build_live_message(target, normalized_payload, now)
         session.add(rec)
         await session.commit()
         await session.refresh(rec)
         return rec
 
-    rec.channel_id = channel_id
-    rec.message_id = message_id
-    rec.scope_type = scope_type
-    rec.scope_key = scope_key
-    rec.last_rendered_at = now
+    _apply_live_message(rec, target, normalized_payload, now)
     await session.commit()
     await session.refresh(rec)
     return rec

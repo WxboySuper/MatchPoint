@@ -39,7 +39,14 @@ async def test_scoped_live_message_editing_and_creation():
 
     now = datetime.now(timezone.utc)
     contest = Contest(name="C1", image_url=None, start_date=now, end_date=now)
-    match = Match(id=1, team1="A", team2="B", scheduled_time=now, contest_id=1, game="lol")
+    match = Match(
+        id=1,
+        team1="A",
+        team2="B",
+        scheduled_time=now,
+        contest_id=1,
+        game="lol",
+    )
     match.contest = contest
 
     # Patch get_bot_instance and session helpers and bulk fetches
@@ -47,14 +54,27 @@ async def test_scoped_live_message_editing_and_creation():
     cfg_obj.live_updates_channel_id = channel.id
     cfg_obj.enabled_games = None
 
-    with patch.object(nb, "get_bot_instance", return_value=mock_bot), \
-        patch.object(nb, "get_async_session") as mock_session_cls, \
-        patch.object(nb, "_bulk_fetch_matches", new_callable=AsyncMock) as mock_bulk_matches, \
-        patch.object(nb, "_bulk_fetch_teams", new_callable=AsyncMock) as mock_bulk_teams, \
-        patch.object(nb, "_resolve_teams") as mock_resolve_teams, \
-        patch.object(nb, "set_live_message_async", new_callable=AsyncMock) as mock_set_live_message, \
-        patch.object(nb, "get_guild_config_async", new_callable=AsyncMock, return_value=cfg_obj) as mock_get_guild_cfg, \
-        patch.object(nb, "get_live_message_async", new_callable=AsyncMock, return_value=None) as mock_get_live:
+    with patch.object(
+        nb, "get_bot_instance", return_value=mock_bot
+    ), patch.object(nb, "get_async_session") as mock_session_cls, patch.object(
+        nb, "_bulk_fetch_matches", new_callable=AsyncMock
+    ) as mock_bulk_matches, patch.object(
+        nb, "_bulk_fetch_teams", new_callable=AsyncMock
+    ) as mock_bulk_teams, patch.object(
+        nb, "_resolve_teams"
+    ) as mock_resolve_teams, patch.object(
+        nb, "set_live_message_async", new_callable=AsyncMock
+    ) as mock_set_live_message, patch.object(
+        nb,
+        "get_guild_config_async",
+        new_callable=AsyncMock,
+        return_value=cfg_obj,
+    ), patch.object(
+        nb,
+        "get_live_message_async",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
 
         mock_session_cls.return_value.__aenter__.return_value = mock_session
         mock_bulk_matches.return_value = [match]
@@ -102,22 +122,45 @@ async def test_mid_series_updates_edit_existing_message():
     mock_session = AsyncMock()
 
     now = datetime.now(timezone.utc)
-    match = Match(id=11, team1="X", team2="Y", scheduled_time=now, contest_id=1, game="lol")
-    match.contest = Contest(name="C", image_url=None, start_date=now, end_date=now)
+    match = Match(
+        id=11,
+        team1="X",
+        team2="Y",
+        scheduled_time=now,
+        contest_id=1,
+        game="lol",
+    )
+    match.contest = Contest(
+        name="C", image_url=None, start_date=now, end_date=now
+    )
 
-    with patch.object(nb, "get_bot_instance", return_value=mock_bot), patch.object(
-        nb, "get_async_session"
-    ) as mock_session_cls, patch.object(nb, "_bulk_fetch_matches", new_callable=AsyncMock) as mock_bulk_matches, patch.object(
+    with patch.object(
+        nb, "get_bot_instance", return_value=mock_bot
+    ), patch.object(nb, "get_async_session") as mock_session_cls, patch.object(
+        nb, "_bulk_fetch_matches", new_callable=AsyncMock
+    ) as mock_bulk_matches, patch.object(
         nb, "_bulk_fetch_teams", new_callable=AsyncMock
-    ) as mock_bulk_teams, patch.object(nb, "_resolve_teams") as mock_resolve_teams, patch.object(
+    ) as mock_bulk_teams, patch.object(
+        nb, "_resolve_teams"
+    ) as mock_resolve_teams, patch.object(
         nb, "get_live_message_async", new_callable=AsyncMock
-    ) as mock_get_live, patch.object(nb, "set_live_message_async", new_callable=AsyncMock) as mock_set_live:
+    ) as mock_get_live, patch.object(
+        nb, "set_live_message_async", new_callable=AsyncMock
+    ) as mock_set_live:
         # Provide a guild config so per-guild channel resolution works in tests
         with patch.object(
-            nb, "get_guild_config_async", new_callable=AsyncMock, return_value=MagicMock(live_updates_channel_id=channel.id, enabled_games=None)
+            nb,
+            "get_guild_config_async",
+            new_callable=AsyncMock,
+            return_value=MagicMock(
+                live_updates_channel_id=channel.id,
+                enabled_games=None,
+            ),
         ):
 
-            mock_session_cls.return_value.__aenter__.return_value = mock_session
+            mock_session_cls.return_value.__aenter__.return_value = (
+                mock_session
+            )
             mock_bulk_matches.return_value = [match]
             mock_bulk_teams.return_value = {}
             mock_resolve_teams.return_value = (None, None)

@@ -31,8 +31,11 @@ async def test_batch_reminders():
     ) as mock_bulk_teams, patch.object(
         src.notification_batcher, "_resolve_teams"
     ) as mock_resolve_teams, patch.object(
-        src.notification_batcher, "get_guild_config_async", new_callable=AsyncMock, return_value=None
-    ) as mock_get_guild_cfg:
+        src.notification_batcher,
+        "get_guild_config_async",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
 
         mock_session_cls.return_value.__aenter__.return_value = mock_session
 

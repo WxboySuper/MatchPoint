@@ -1,14 +1,14 @@
 import asyncio
+import inspect
 import logging
 from collections import defaultdict
-from datetime import datetime, timezone
-from typing import Optional, List, Tuple, Any, AsyncGenerator, Callable
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import Any, AsyncGenerator, Callable, List, Optional, Tuple
 
 import discord
-from sqlmodel import select, or_, func
 from sqlalchemy.orm import selectinload
-import inspect
+from sqlmodel import func, or_, select
 
 from src.db import get_async_session
 from src.models import Match, Result, Pick, Team
@@ -21,6 +21,8 @@ from src.crud import (
 )
 
 logger = logging.getLogger(__name__)
+
+_GUILD_COLLECTION_TYPES = (list, tuple, set)
 
 
 class NotificationBatcher:
@@ -552,104 +554,174 @@ async def _deliver_embed(
     if not bot:
         return
 
-    # If the bot.guilds collection is not a concrete iterable (tests often use
-    # a plain MagicMock), fall back to broadcasting to avoid exercising the
-    # per-guild delivery logic which requires full Guild/Channel API objects.
-    if not isinstance(getattr(bot, "guilds", None), (list, tuple, set)):
+    guilds = _get_concrete_guilds(bot)
+    if guilds is None:
         await broadcast_embed_to_guilds(bot, embed, context)
         return
 
+    guilds_to_broadcast = await _deliver_embed_to_guilds(
+        guilds, embed, game_slug, scope_type
+    )
+    await _broadcast_delivery_fallbacks(
+        bot, guilds, guilds_to_broadcast, embed, context
+    )
+
+
+def _get_concrete_guilds(
+    bot: discord.Client,
+) -> Optional[List[discord.Guild]]:
+    guilds = getattr(bot, "guilds", None)
+    if not isinstance(guilds, _GUILD_COLLECTION_TYPES):
+        return None
+    return list(guilds)
+
+
+async def _await_if_needed(value: Any) -> Any:
+    return await value if inspect.isawaitable(value) else value
+
+
+async def _load_delivery_state(session, guild, scope_type, game_slug):
+    guild_id = getattr(guild, "id", None)
+    cfg = await _await_if_needed(get_guild_config_async(session, guild_id))
+    live = await _await_if_needed(
+        get_live_message_async(session, guild_id, scope_type, game_slug)
+    )
+    return cfg, live
+
+
+def _guild_accepts_game(cfg: Any, game_slug: str) -> bool:
+    if not cfg or not cfg.enabled_games:
+        return True
+
+    allowed = [g.strip() for g in cfg.enabled_games.split(",") if g.strip()]
+    return not allowed or game_slug in allowed
+
+
+def _get_channel_id(cfg: Any, live: Any) -> Optional[int]:
+    if cfg and cfg.live_updates_channel_id:
+        return cfg.live_updates_channel_id
+    if live and live.channel_id:
+        return live.channel_id
+    return None
+
+
+async def _resolve_guild_channel(guild, channel_id: int):
+    channel = guild.get_channel(channel_id)
+    if channel is not None:
+        return channel
+    return await guild.fetch_channel(channel_id)
+
+
+async def _try_edit_live_message(channel, live, embed) -> bool:
+    if not live or not getattr(live, "message_id", None):
+        return False
+
+    msg = await channel.fetch_message(live.message_id)
+    await msg.edit(embed=embed)
+    return True
+
+
+async def _send_and_track_live_message(
+    session,
+    guild,
+    channel,
+    embed: discord.Embed,
+    scope_type: Optional[str],
+    game_slug: str,
+) -> None:
+    new_msg = await channel.send(embed=embed)
+    await set_live_message_async(
+        session,
+        getattr(guild, "id", None),
+        channel.id,
+        new_msg.id,
+        scope_type=scope_type or "guild_live",
+        scope_key=game_slug,
+    )
+
+
+async def _deliver_via_channel(
+    session,
+    guild,
+    channel,
+    live,
+    embed: discord.Embed,
+    scope_type: Optional[str],
+    game_slug: str,
+) -> bool:
+    guild_id = getattr(guild, "id", None)
+    try:
+        if await _try_edit_live_message(channel, live, embed):
+            return True
+    except discord.NotFound:
+        pass
+    except Exception:
+        logger.exception(
+            "Failed to edit live message %s in guild %s",
+            getattr(live, "message_id", None),
+            guild_id,
+        )
+        return False
+
+    try:
+        await _send_and_track_live_message(
+            session, guild, channel, embed, scope_type, game_slug
+        )
+        return True
+    except Exception:
+        logger.exception(
+            "Failed to send live update to guild %s in channel %s",
+            guild_id,
+            getattr(channel, "id", None),
+        )
+        return False
+
+
+async def _deliver_to_guild(
+    session,
+    guild,
+    embed: discord.Embed,
+    game_slug: str,
+    scope_type: Optional[str],
+) -> bool:
+    guild_id = getattr(guild, "id", None)
+    cfg, live = await _load_delivery_state(
+        session, guild, scope_type, game_slug
+    )
+    if not _guild_accepts_game(cfg, game_slug):
+        return True
+
+    channel_id = _get_channel_id(cfg, live)
+    if channel_id is None:
+        return False
+
+    try:
+        channel = await _resolve_guild_channel(guild, channel_id)
+    except Exception:
+        logger.exception(
+            "Failed to resolve channel %s for guild %s", channel_id, guild_id
+        )
+        return False
+
+    return await _deliver_via_channel(
+        session, guild, channel, live, embed, scope_type, game_slug
+    )
+
+
+async def _deliver_embed_to_guilds(
+    guilds: List[discord.Guild],
+    embed: discord.Embed,
+    game_slug: str,
+    scope_type: Optional[str],
+) -> List[discord.Guild]:
     guilds_to_broadcast = []
-
     async with get_async_session() as session:
-        for guild in list(bot.guilds):
+        for guild in guilds:
             try:
-                # Some tests/mocks may provide sync or async callables or
-                # return awaitables; be permissive and await only when
-                # necessary so patched values behave as expected.
-                cfg_val = get_guild_config_async(
-                    session, getattr(guild, "id", None)
+                delivered = await _deliver_to_guild(
+                    session, guild, embed, game_slug, scope_type
                 )
-                cfg = (
-                    await cfg_val if inspect.isawaitable(cfg_val) else cfg_val
-                )
-                if cfg and cfg.enabled_games:
-                    allowed = [
-                        g.strip()
-                        for g in cfg.enabled_games.split(",")
-                        if g.strip()
-                    ]
-                    if allowed and game_slug not in allowed:
-                        continue
-
-                # Query the live message for the appropriate scope (per-game)
-                live_val = get_live_message_async(
-                    session, getattr(guild, "id", None), scope_type, game_slug
-                )
-                live = (
-                    await live_val
-                    if inspect.isawaitable(live_val)
-                    else live_val
-                )
-
-                channel_id = None
-                if cfg and cfg.live_updates_channel_id:
-                    channel_id = cfg.live_updates_channel_id
-                elif live and live.channel_id:
-                    channel_id = live.channel_id
-
-                if channel_id is None:
-                    guilds_to_broadcast.append(guild)
-                    continue
-
-                try:
-                    channel = guild.get_channel(channel_id)
-                    if channel is None:
-                        channel = await guild.fetch_channel(channel_id)
-                except Exception:
-                    logger.exception(
-                        "Failed to resolve channel %s for guild %s",
-                        channel_id,
-                        getattr(guild, "id", None),
-                    )
-                    guilds_to_broadcast.append(guild)
-                    continue
-
-                if live and getattr(live, "message_id", None):
-                    try:
-                        msg = await channel.fetch_message(live.message_id)
-                        await msg.edit(embed=embed)
-                        continue
-                    except discord.NotFound:
-                        pass
-                    except Exception:
-                        logger.exception(
-                            "Failed to edit live message %s in guild %s",
-                            getattr(live, "message_id", None),
-                            getattr(guild, "id", None),
-                        )
-                        guilds_to_broadcast.append(guild)
-                        continue
-
-                try:
-                    new_msg = await channel.send(embed=embed)
-                    # Persist the canonical live message pointer for this guild
-                    # and scope (scope_type + game_slug).
-                    await set_live_message_async(
-                        session,
-                        getattr(guild, "id", None),
-                        channel.id,
-                        new_msg.id,
-                        scope_type or "guild_live",
-                        game_slug,
-                    )
-                    continue
-                except Exception:
-                    logger.exception(
-                        "Failed to send live update to guild %s in channel %s",
-                        getattr(guild, "id", None),
-                        channel_id,
-                    )
+                if not delivered:
                     guilds_to_broadcast.append(guild)
             except Exception:
                 logger.exception(
@@ -657,11 +729,25 @@ async def _deliver_embed(
                     getattr(guild, "id", None),
                 )
                 guilds_to_broadcast.append(guild)
+    return guilds_to_broadcast
 
+
+async def _yield_to_event_loop() -> None:
+    # Intentional cooperative yield while walking fallback sends.
+    await asyncio.sleep(0)
+
+
+async def _broadcast_delivery_fallbacks(
+    bot: discord.Client,
+    guilds: List[discord.Guild],
+    guilds_to_broadcast: List[discord.Guild],
+    embed: discord.Embed,
+    context: str,
+) -> None:
     if not guilds_to_broadcast:
         return
 
-    if len(guilds_to_broadcast) == len(list(bot.guilds)):
+    if len(guilds_to_broadcast) == len(guilds):
         await broadcast_embed_to_guilds(bot, embed, context)
         return
 
@@ -669,12 +755,15 @@ async def _deliver_embed(
         try:
             await send_announcement(guild, embed)
             logger.info("Sent %s to guild %s.", context, guild.id)
-        except Exception as e:
+        except Exception as exc:
             logger.error(
-                "Failed to send %s to guild %s: %s", context, guild.id, e
+                "Failed to send %s to guild %s: %s",
+                context,
+                guild.id,
+                exc,
             )
         if (idx + 1) % 3 == 0:
-            await asyncio.sleep(0)
+            await _yield_to_event_loop()
 
 
 # Global instance
