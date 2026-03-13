@@ -93,3 +93,67 @@ async def test_set_games_rejects_unsupported_slug():
     interaction.followup.send.assert_awaited_once()
     message = interaction.followup.send.call_args.args[0]
     assert "Invalid games list." in message
+
+
+@pytest.mark.asyncio
+async def test_add_game_updates_enabled_games():
+    interaction = AsyncMock(spec=discord.Interaction)
+    interaction.guild = MagicMock(id=101)
+    interaction.response = AsyncMock()
+    interaction.followup = AsyncMock()
+
+    with patch.object(
+        config_commands,
+        "_has_config_permission",
+        new_callable=AsyncMock,
+        return_value=True,
+    ), patch.object(
+        config_commands,
+        "_load_enabled_games",
+        new_callable=AsyncMock,
+        return_value=["lol"],
+    ), patch.object(
+        config_commands,
+        "_update_enabled_games",
+        new_callable=AsyncMock,
+        return_value="lol,cs2",
+    ) as mock_update:
+        await config_commands.add_game.callback(interaction, "cs2")
+
+    mock_update.assert_awaited_once_with(101, ["lol", "cs2"])
+    interaction.followup.send.assert_awaited_once_with(
+        "Enabled games: LoL, CS2",
+        ephemeral=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_remove_game_removes_enabled_slug():
+    interaction = AsyncMock(spec=discord.Interaction)
+    interaction.guild = MagicMock(id=202)
+    interaction.response = AsyncMock()
+    interaction.followup = AsyncMock()
+
+    with patch.object(
+        config_commands,
+        "_has_config_permission",
+        new_callable=AsyncMock,
+        return_value=True,
+    ), patch.object(
+        config_commands,
+        "_load_enabled_games",
+        new_callable=AsyncMock,
+        return_value=["lol", "cs2"],
+    ), patch.object(
+        config_commands,
+        "_update_enabled_games",
+        new_callable=AsyncMock,
+        return_value="lol",
+    ) as mock_update:
+        await config_commands.remove_game.callback(interaction, "cs2")
+
+    mock_update.assert_awaited_once_with(202, ["lol"])
+    interaction.followup.send.assert_awaited_once_with(
+        "Enabled games: LoL",
+        ephemeral=True,
+    )

@@ -159,7 +159,11 @@ async def _remove_stale_running_mapping(match_id: int) -> None:
 
 
 async def _fetch_match_data(match):
-    return await _fetch_match_from_pandascore(match.pandascore_id)
+    game_slug = getattr(match, "game", None) or "lol"
+    return await _fetch_match_from_pandascore(
+        match.pandascore_id,
+        game=game_slug,
+    )
 
 
 async def _fetch_running_matches_for_games(games):

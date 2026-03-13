@@ -370,8 +370,10 @@ async def _fetch_running_matches(game: str) -> list[Match]:
         stmt = (
             select(Match)
             .options(selectinload(Match.contest))
+            .outerjoin(Result, Result.match_id == Match.id)
             .where(Match.game == game)
             .where(Match.status == "running")
+            .where(Result.id.is_(None))
             .order_by(Match.scheduled_time, Match.id)
             .limit(RUNNING_MATCH_LIMIT)
         )

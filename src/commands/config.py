@@ -1,6 +1,7 @@
-"""Guild configuration commands: view / set channels / set games."""
+"""Guild configuration commands: view / set channels / manage games."""
 
 import logging
+from collections.abc import Iterable
 from typing import Optional
 
 import discord
@@ -34,6 +35,28 @@ def _format_channel(channel_id: Optional[int]) -> str:
 
 def _supported_games_text() -> str:
     return ", ".join(game.upper() for game in get_supported_game_slugs())
+
+
+def _normalize_games_list(raw_games: Iterable[str]) -> list[str]:
+    supported = set(get_supported_game_slugs())
+    normalized = []
+    seen = set()
+    for raw in raw_games:
+        game = raw.strip().lower()
+        if not game or game in seen:
+            continue
+        if game not in supported:
+            raise ValueError(game)
+        seen.add(game)
+        normalized.append(game)
+    return normalized
+
+
+def _serialize_games(games: Iterable[str]) -> Optional[str]:
+    normalized = _normalize_games_list(games)
+    if not normalized:
+        return None
+    return ",".join(normalized)
 
 
 @config_group.command(
@@ -166,7 +189,7 @@ async def set_channel(
 
 @config_group.command(
     name="set_games",
-    description="Enable comma-separated game slugs (e.g. 'lol,cs2')",
+    description="Replace enabled games with a comma-separated list",
 )
 async def set_games(interaction: discord.Interaction, games: str):
     # Permission check (same as other commands)
@@ -181,11 +204,19 @@ async def set_games(interaction: discord.Interaction, games: str):
         )
         return
 
-    normalized = _normalize_games_value(games)
-    if normalized is None:
+    try:
+        normalized = _serialize_games(games.split(","))
+    except ValueError:
         await interaction.followup.send(
             "Invalid games list. Use supported slugs: "
             f"{_supported_games_text()}",
+            ephemeral=True,
+        )
+        return
+
+    if normalized is None:
+        await interaction.followup.send(
+            "Choose at least one supported game.",
             ephemeral=True,
         )
         return
@@ -206,24 +237,110 @@ async def set_games(interaction: discord.Interaction, games: str):
         )
 
 
-def _normalize_games_value(raw_games: str) -> Optional[str]:
-    supported = set(get_supported_game_slugs())
-    normalized = []
-    seen = set()
-    for raw in raw_games.split(","):
-        game = raw.strip().lower()
-        if not game:
-            continue
-        if game not in supported:
-            return None
-        if game in seen:
-            continue
-        seen.add(game)
-        normalized.append(game)
+async def _load_enabled_games(guild_id: int) -> list[str]:
+    async with get_async_session() as session:
+        cfg = await get_guild_config_async(session, guild_id)
+        raw_games = getattr(cfg, "enabled_games", None)
+    return _normalize_games_list((raw_games or "").split(","))
 
-    if not normalized:
-        return None
-    return ",".join(normalized)
+
+async def _update_enabled_games(
+    guild_id: int,
+    games: Iterable[str],
+) -> str:
+    normalized = _serialize_games(games)
+    async with get_async_session() as session:
+        await upsert_guild_config_async(
+            session, guild_id, enabled_games=normalized
+        )
+    return normalized or ""
+
+
+@config_group.command(
+    name="add_game",
+    description="Enable one supported game for this guild",
+)
+@app_commands.describe(game="Game to enable")
+async def add_game(interaction: discord.Interaction, game: str):
+    if not await _has_config_permission(interaction):
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    guild_id = interaction.guild.id if interaction.guild else None
+    if guild_id is None:
+        await interaction.followup.send(
+            "This command must be run in a server.", ephemeral=True
+        )
+        return
+
+    try:
+        enabled_games = await _load_enabled_games(guild_id)
+        normalized = _normalize_games_list([*enabled_games, game])
+    except ValueError:
+        await interaction.followup.send(
+            "Unsupported game. Choose from: " f"{_supported_games_text()}",
+            ephemeral=True,
+        )
+        return
+
+    if game.strip().lower() in enabled_games:
+        await interaction.followup.send(
+            f"{format_enabled_games(game)} is already enabled.",
+            ephemeral=True,
+        )
+        return
+
+    stored = await _update_enabled_games(guild_id, normalized)
+    await interaction.followup.send(
+        f"Enabled games: {format_enabled_games(stored)}",
+        ephemeral=True,
+    )
+
+
+@config_group.command(
+    name="remove_game",
+    description="Disable one supported game for this guild",
+)
+@app_commands.describe(game="Game to disable")
+async def remove_game(interaction: discord.Interaction, game: str):
+    if not await _has_config_permission(interaction):
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    guild_id = interaction.guild.id if interaction.guild else None
+    if guild_id is None:
+        await interaction.followup.send(
+            "This command must be run in a server.", ephemeral=True
+        )
+        return
+
+    enabled_games = await _load_enabled_games(guild_id)
+    normalized_game = game.strip().lower()
+    if normalized_game not in get_supported_game_slugs():
+        await interaction.followup.send(
+            "Unsupported game. Choose from: " f"{_supported_games_text()}",
+            ephemeral=True,
+        )
+        return
+
+    if normalized_game not in enabled_games:
+        await interaction.followup.send(
+            f"{format_enabled_games(game)} is not enabled.",
+            ephemeral=True,
+        )
+        return
+
+    remaining_games = [
+        enabled_game
+        for enabled_game in enabled_games
+        if enabled_game != normalized_game
+    ]
+    stored = await _update_enabled_games(guild_id, remaining_games)
+    if stored:
+        message = f"Enabled games: {format_enabled_games(stored)}"
+    else:
+        message = "No games are currently enabled for this guild."
+    await interaction.followup.send(message, ephemeral=True)
 
 
 @set_games.autocomplete("games")
@@ -253,6 +370,39 @@ async def _games_autocomplete(
             )
         )
     return choices[:25]
+
+
+async def _single_game_autocomplete(
+    current: str,
+) -> list[app_commands.Choice[str]]:
+    token = current.strip().lower()
+    choices = []
+    for game in get_supported_game_slugs():
+        if token and not game.startswith(token):
+            continue
+        choices.append(
+            app_commands.Choice(
+                name=format_enabled_games(game),
+                value=game,
+            )
+        )
+    return choices[:25]
+
+
+@add_game.autocomplete("game")
+async def _add_game_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    _ = interaction
+    return await _single_game_autocomplete(current)
+
+
+@remove_game.autocomplete("game")
+async def _remove_game_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    _ = interaction
+    return await _single_game_autocomplete(current)
 
 
 async def setup(bot: commands.Bot):

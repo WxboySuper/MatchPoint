@@ -16,6 +16,7 @@ async def test_poll_live_match_job_mid_series_update():
     mock_match = Match(
         id=1,
         pandascore_id=123,
+        game="cs2",
         team1="Team A",
         team2="Team B",
         team1_id=100,
@@ -69,7 +70,7 @@ async def test_poll_live_match_job_mid_series_update():
 
         # Assert
         mock_get_match.assert_awaited_once_with(mock_session, 1)
-        mock_get_match_data.assert_awaited_once_with(123)
+        mock_get_match_data.assert_awaited_once_with(123, game="cs2")
         mock_send_update.assert_awaited_once()
         mock_send_result.assert_not_called()
         mock_remove_job.assert_not_called()
@@ -87,6 +88,7 @@ async def test_poll_live_match_job_final_result():
     mock_match = Match(
         id=2,
         pandascore_id=456,
+        game="cs2",
         team1="Team A",
         team2="Team B",
         team1_id=100,
@@ -150,7 +152,7 @@ async def test_poll_live_match_job_final_result():
 
         # Assert
         mock_get_match.assert_awaited_once_with(mock_session, 2)
-        mock_get_match_data.assert_awaited_once_with(456)
+        mock_get_match_data.assert_awaited_once_with(456, game="cs2")
         mock_send_update.assert_not_called()
         mock_send_result.assert_awaited_once()
         mock_remove_job.assert_called_once()
@@ -166,6 +168,7 @@ async def test_poll_live_match_job_no_score_change():
     mock_match = Match(
         id=3,
         pandascore_id=789,
+        game="cs2",
         team1="Team A",
         team2="Team B",
         team1_id=100,
@@ -218,7 +221,7 @@ async def test_poll_live_match_job_no_score_change():
 
         # Assert
         mock_get_match.assert_awaited_once_with(mock_session, 3)
-        mock_get_match_data.assert_awaited_once_with(789)
+        mock_get_match_data.assert_awaited_once_with(789, game="cs2")
         mock_send_update.assert_not_called()
         mock_send_result.assert_not_called()
         mock_remove_job.assert_not_called()

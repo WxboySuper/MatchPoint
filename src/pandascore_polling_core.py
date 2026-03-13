@@ -116,9 +116,13 @@ def _remove_job_if_exists(job_id: str) -> None:
         logger.exception("Failed to remove job %s via scheduler", job_id)
 
 
-async def _fetch_match_from_pandascore(pandascore_id: int) -> Optional[dict]:
+async def _fetch_match_from_pandascore(
+    pandascore_id: int, game: str = "lol"
+) -> Optional[dict]:
     try:
-        return await pandascore_client.fetch_match_by_id(pandascore_id)
+        return await pandascore_client.fetch_match_by_id(
+            pandascore_id, game=game
+        )
     except Exception:
         logger.exception(
             "Failed to fetch match %s from PandaScore", pandascore_id
@@ -190,6 +194,7 @@ async def _handle_winner(
 
     committed = False
     result = None
+    match.status = "finished"
     try:
         result, committed = await _persist_result(
             match, winner, current_score_str
@@ -512,13 +517,23 @@ async def _process_running_match(session, match_data: dict) -> bool:
 
 async def _handle_finished_pandascore_id(pandascore_id: int) -> None:
     try:
-        match_data = await pandascore_client.fetch_match_by_id(pandascore_id)
+        from src.db import get_async_session
+
+        async with get_async_session() as session:
+            match = await crud.get_match_by_pandascore_id(
+                session, pandascore_id
+            )
+            if not match:
+                return
+            game_slug = getattr(match, "game", None) or "lol"
+
+        match_data = await pandascore_client.fetch_match_by_id(
+            pandascore_id, game=game_slug
+        )
         if not match_data or match_data.get("status") != "finished":
             return
 
         try:
-            from src.db import get_async_session
-
             async with get_async_session() as session:
                 match = await crud.get_match_by_pandascore_id(
                     session, pandascore_id
