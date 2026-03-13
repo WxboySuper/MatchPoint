@@ -9,6 +9,22 @@ from src.notification_batcher import NotificationBatcher
 from src.models import Match, Contest
 
 
+class _BatcherMockBundle:
+    def __init__(
+        self,
+        batcher_session_cls,
+        delivery_session_cls,
+        bulk_matches,
+        bulk_teams,
+        resolve_teams,
+    ):
+        self.batcher_session_cls = batcher_session_cls
+        self.delivery_session_cls = delivery_session_cls
+        self.bulk_matches = bulk_matches
+        self.bulk_teams = bulk_teams
+        self.resolve_teams = resolve_teams
+
+
 def _build_live_message_test_match(match_id: int) -> Match:
     now = datetime.now(timezone.utc)
     contest = Contest(name="C1", image_url=None, start_date=now, end_date=now)
@@ -25,23 +41,19 @@ def _build_live_message_test_match(match_id: int) -> Match:
 
 
 def _configure_batcher_mocks(
-    mock_batcher_session_cls,
-    mock_delivery_session_cls,
+    bundle: _BatcherMockBundle,
     mock_session,
-    mock_bulk_matches,
-    mock_bulk_teams,
-    mock_resolve_teams,
     match,
 ) -> None:
-    mock_batcher_session_cls.return_value.__aenter__.return_value = (
+    bundle.batcher_session_cls.return_value.__aenter__.return_value = (
         mock_session
     )
-    mock_delivery_session_cls.return_value.__aenter__.return_value = (
+    bundle.delivery_session_cls.return_value.__aenter__.return_value = (
         mock_session
     )
-    mock_bulk_matches.return_value = [match]
-    mock_bulk_teams.return_value = {}
-    mock_resolve_teams.return_value = (None, None)
+    bundle.bulk_matches.return_value = [match]
+    bundle.bulk_teams.return_value = {}
+    bundle.resolve_teams.return_value = (None, None)
 
 
 @pytest.mark.asyncio
@@ -105,14 +117,17 @@ async def test_scoped_live_message_editing_and_creation():
         new_callable=AsyncMock,
         return_value=None,
     ):
-
-        _configure_batcher_mocks(
+        bundle = _BatcherMockBundle(
             mock_batcher_session_cls,
             mock_delivery_session_cls,
-            mock_session,
             mock_bulk_matches,
             mock_bulk_teams,
             mock_resolve_teams,
+        )
+
+        _configure_batcher_mocks(
+            bundle,
+            mock_session,
             match,
         )
 
@@ -185,14 +200,17 @@ async def test_mid_series_updates_edit_existing_message():
                 enabled_games=None,
             ),
         ):
-
-            _configure_batcher_mocks(
+            bundle = _BatcherMockBundle(
                 mock_batcher_session_cls,
                 mock_delivery_session_cls,
-                mock_session,
                 mock_bulk_matches,
                 mock_bulk_teams,
                 mock_resolve_teams,
+            )
+
+            _configure_batcher_mocks(
+                bundle,
+                mock_session,
                 match,
             )
 
