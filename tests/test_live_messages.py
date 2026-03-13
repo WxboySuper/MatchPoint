@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
@@ -215,3 +215,72 @@ async def test_fetch_running_matches_excludes_finished_results():
         matches = await live_messages._fetch_running_matches("lol")
 
     assert [match.pandascore_id for match in matches] == [1]
+
+
+@pytest.mark.asyncio
+async def test_fetch_upcoming_matches_includes_future_scheduled_statuses():
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        contest = Contest(
+            pandascore_league_id=10,
+            pandascore_serie_id=20,
+            name="IEM Katowice",
+            start_date=datetime.now(timezone.utc),
+            end_date=datetime.now(timezone.utc),
+        )
+        session.add(contest)
+        session.commit()
+        session.refresh(contest)
+
+        scheduled_match = Match(
+            contest_id=contest.id,
+            pandascore_id=10,
+            team1="Alpha",
+            team2="Beta",
+            status="scheduled",
+            game="lol",
+            scheduled_time=datetime.now(timezone.utc) + timedelta(hours=1),
+        )
+        finished_match = Match(
+            contest_id=contest.id,
+            pandascore_id=11,
+            team1="Gamma",
+            team2="Delta",
+            status="finished",
+            game="lol",
+            scheduled_time=datetime.now(timezone.utc) + timedelta(hours=2),
+        )
+        session.add(scheduled_match)
+        session.add(finished_match)
+        session.commit()
+
+    class _ResultWrapper:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return self._rows
+
+    class _AsyncSession:
+        @staticmethod
+        async def exec(stmt):
+            with Session(engine) as session:
+                return _ResultWrapper(list(session.exec(stmt).all()))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            _ = (exc_type, exc, tb)
+            return False
+
+    with patch.object(
+        live_messages,
+        "get_async_session",
+        return_value=_AsyncSession(),
+    ):
+        matches = await live_messages._fetch_upcoming_matches("lol")
+
+    assert [match.pandascore_id for match in matches] == [10]

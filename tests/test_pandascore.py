@@ -390,6 +390,57 @@ class TestPandaScoreSyncIntegration:
         assert requested_games == {"lol", "cs2"}
         assert result is not None
 
+    @pytest.mark.asyncio
+    async def test_perform_pandascore_sync_includes_guild_enabled_games(self):
+        from src.pandascore_sync import perform_pandascore_sync
+
+        class _ResultWrapper:
+            def __init__(self, rows):
+                self._rows = rows
+
+            def all(self):
+                return self._rows
+
+        class _AsyncSession:
+            async def exec(self, stmt):
+                _ = stmt
+                return _ResultWrapper(["cs2"])
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                _ = (exc_type, exc, tb)
+                return False
+
+        async def _fetch_matches(kind, options=None, game="lol"):
+            _ = (kind, options)
+            return []
+
+        with patch(
+            "src.pandascore_sync.get_async_session",
+            return_value=_AsyncSession(),
+        ), patch(
+            "src.pandascore_sync.pandascore_client.fetch_matches",
+            new_callable=AsyncMock,
+            side_effect=_fetch_matches,
+        ) as mock_fetch, patch(
+            "src.pandascore_sync._run_post_sync_actions",
+            new_callable=AsyncMock,
+        ), patch(
+            "src.pandascore_sync._reconcile_finished_matches_for_game",
+            new_callable=AsyncMock,
+        ), patch(
+            "src.config.DEFAULT_GAMES",
+            ["lol"],
+        ):
+            await perform_pandascore_sync()
+
+        requested_games = {
+            call.kwargs["game"] for call in mock_fetch.await_args_list
+        }
+        assert requested_games == {"lol", "cs2"}
+
 
 class TestPandaScoreClientRateLimiting:
     """Tests for rate limiting behavior."""

@@ -9,8 +9,9 @@ import asyncio
 import logging
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
+from sqlalchemy.exc import OperationalError
 from sqlmodel import select
-from src.models import Match, Result
+from src.models import GuildConfig, Match, Result
 from src.pandascore_client import (
     pandascore_client,
     DEFAULT_PAGE_SIZE,
@@ -39,17 +40,49 @@ from src.parsers.factory import get_parser, get_supported_game_slugs
 logger = logging.getLogger(__name__)
 
 
-def _configured_sync_games(requested_game: Optional[str] = None) -> list[str]:
+def _parse_enabled_games(raw_games: Optional[str]) -> list[str]:
+    if raw_games is None:
+        return []
+
+    supported = set(get_supported_game_slugs())
+    normalized = []
+    seen = set()
+    for raw in raw_games.split(","):
+        game = raw.strip().lower()
+        if not game or game in seen or game not in supported:
+            continue
+        seen.add(game)
+        normalized.append(game)
+    return normalized
+
+
+async def _configured_sync_games(
+    requested_game: Optional[str] = None,
+) -> list[str]:
     if requested_game:
         return [requested_game]
 
     from src.config import DEFAULT_GAMES
 
     supported = set(get_supported_game_slugs())
-    configured = [
+    configured = {
         game for game in (DEFAULT_GAMES or ["lol"]) if game in supported
+    }
+
+    try:
+        async with get_async_session() as db_session:
+            rows = await db_session.exec(select(GuildConfig.enabled_games))
+            for raw_games in rows.all():
+                configured.update(_parse_enabled_games(raw_games))
+    except OperationalError:
+        logger.warning(
+            "Guild configuration table unavailable; using default sync games."
+        )
+
+    ordered = [
+        game for game in get_supported_game_slugs() if game in configured
     ]
-    return configured or ["lol"]
+    return ordered or ["lol"]
 
 
 async def _run_post_sync_actions(
@@ -240,7 +273,7 @@ async def perform_pandascore_sync(
     time_changes: List[Tuple[Any, Any, Any]] = []
     failed_games: List[str] = []
 
-    for game_slug in _configured_sync_games(game):
+    for game_slug in await _configured_sync_games(game):
         matches_data = await _fetch_matches_for_sync(league_ids, game_slug)
         if matches_data is None:
             failed_games.append(game_slug)
@@ -300,7 +333,7 @@ async def sync_running_matches() -> Dict[str, Any]:
 
     started = []
     finished = []
-    for game_slug in _configured_sync_games():
+    for game_slug in await _configured_sync_games():
         try:
             running_matches = await pandascore_client.fetch_running_matches(
                 game=game_slug
@@ -346,7 +379,13 @@ def _resolve_match_game(match, match_data: Dict[str, Any]) -> str:
     if videogame.get("slug"):
         return videogame["slug"]
 
-    return _configured_sync_games()[0]
+    from src.config import DEFAULT_GAMES
+
+    supported = set(get_supported_game_slugs())
+    for game in DEFAULT_GAMES or ["lol"]:
+        if game in supported:
+            return game
+    return "lol"
 
 
 async def fetch_and_update_match_result(

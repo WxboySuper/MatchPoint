@@ -26,6 +26,7 @@ UPCOMING_MATCH_LIMIT = 10
 RUNNING_MATCH_LIMIT = 25
 RESULTS_MATCH_LIMIT = 10
 RUNNING_MATCH_STALE_HOURS = 24
+NON_UPCOMING_STATUSES = ("running", "finished", "canceled", "postponed")
 GAME_DISPLAY_NAMES = {
     "lol": "LoL",
     "cs2": "CS2",
@@ -353,8 +354,8 @@ async def _fetch_upcoming_matches(game: str) -> list[Match]:
             select(Match)
             .options(selectinload(Match.contest))
             .where(Match.game == game)
-            .where(Match.status == "not_started")
             .where(Match.scheduled_time >= now)
+            .where(Match.status.notin_(NON_UPCOMING_STATUSES))
             .order_by(Match.scheduled_time, Match.id)
             .limit(UPCOMING_MATCH_LIMIT)
         )
