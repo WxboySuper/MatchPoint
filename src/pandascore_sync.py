@@ -97,7 +97,9 @@ async def _run_post_sync_actions(
             await _process_with_yield_calls(time_calls, batch=5)
 
 
-async def _fetch_matches_for_sync(league_ids: Optional[List[int]], game_slug: Optional[str] = None):
+async def _fetch_matches_for_sync(
+    league_ids: Optional[List[int]], game_slug: Optional[str] = None
+):
     """Fetch upcoming, running and recent past matches for sync.
 
     Returns combined list or None on failure.
@@ -175,7 +177,9 @@ async def _process_matches_and_commit(
         logger.error("No parser available for '%s'", game_for_run)
         return ([], [], [], summary)
 
-    ctx = PandaScoreSyncContext(db_session=db_session, summary=summary, parser=parser)
+    ctx = PandaScoreSyncContext(
+        db_session=db_session, summary=summary, parser=parser
+    )
 
     for i, match_data in enumerate(matches_data):
         try:

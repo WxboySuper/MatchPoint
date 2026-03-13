@@ -34,7 +34,9 @@ def start_scheduler():
             replace_existing=True,
             kwargs={"game": first_game},
         )
-        logger.info("Added 'sync_pandascore_job' (game=%s) to scheduler.", first_game)
+        logger.info(
+            "Added 'sync_pandascore_job' (game=%s) to scheduler.", first_game
+        )
 
         # Additional per-game jobs (if multiple defaults are configured)
         for g in default_games[1:]:

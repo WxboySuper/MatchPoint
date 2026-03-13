@@ -567,10 +567,18 @@ async def _deliver_embed(
                 # Some tests/mocks may provide sync or async callables or
                 # return awaitables; be permissive and await only when
                 # necessary so patched values behave as expected.
-                cfg_val = get_guild_config_async(session, getattr(guild, "id", None))
-                cfg = await cfg_val if inspect.isawaitable(cfg_val) else cfg_val
+                cfg_val = get_guild_config_async(
+                    session, getattr(guild, "id", None)
+                )
+                cfg = (
+                    await cfg_val if inspect.isawaitable(cfg_val) else cfg_val
+                )
                 if cfg and cfg.enabled_games:
-                    allowed = [g.strip() for g in cfg.enabled_games.split(",") if g.strip()]
+                    allowed = [
+                        g.strip()
+                        for g in cfg.enabled_games.split(",")
+                        if g.strip()
+                    ]
                     if allowed and game_slug not in allowed:
                         continue
 
@@ -578,7 +586,11 @@ async def _deliver_embed(
                 live_val = get_live_message_async(
                     session, getattr(guild, "id", None), scope_type, game_slug
                 )
-                live = await live_val if inspect.isawaitable(live_val) else live_val
+                live = (
+                    await live_val
+                    if inspect.isawaitable(live_val)
+                    else live_val
+                )
 
                 channel_id = None
                 if cfg and cfg.live_updates_channel_id:
@@ -595,7 +607,11 @@ async def _deliver_embed(
                     if channel is None:
                         channel = await guild.fetch_channel(channel_id)
                 except Exception:
-                    logger.exception("Failed to resolve channel %s for guild %s", channel_id, getattr(guild, "id", None))
+                    logger.exception(
+                        "Failed to resolve channel %s for guild %s",
+                        channel_id,
+                        getattr(guild, "id", None),
+                    )
                     guilds_to_broadcast.append(guild)
                     continue
 
@@ -607,7 +623,11 @@ async def _deliver_embed(
                     except discord.NotFound:
                         pass
                     except Exception:
-                        logger.exception("Failed to edit live message %s in guild %s", getattr(live, "message_id", None), getattr(guild, "id", None))
+                        logger.exception(
+                            "Failed to edit live message %s in guild %s",
+                            getattr(live, "message_id", None),
+                            getattr(guild, "id", None),
+                        )
                         guilds_to_broadcast.append(guild)
                         continue
 
@@ -625,10 +645,17 @@ async def _deliver_embed(
                     )
                     continue
                 except Exception:
-                    logger.exception("Failed to send live update to guild %s in channel %s", getattr(guild, "id", None), channel_id)
+                    logger.exception(
+                        "Failed to send live update to guild %s in channel %s",
+                        getattr(guild, "id", None),
+                        channel_id,
+                    )
                     guilds_to_broadcast.append(guild)
             except Exception:
-                logger.exception("Unexpected error while delivering to guild %s", getattr(guild, "id", None))
+                logger.exception(
+                    "Unexpected error while delivering to guild %s",
+                    getattr(guild, "id", None),
+                )
                 guilds_to_broadcast.append(guild)
 
     if not guilds_to_broadcast:
@@ -643,7 +670,9 @@ async def _deliver_embed(
             await send_announcement(guild, embed)
             logger.info("Sent %s to guild %s.", context, guild.id)
         except Exception as e:
-            logger.error("Failed to send %s to guild %s: %s", context, guild.id, e)
+            logger.error(
+                "Failed to send %s to guild %s: %s", context, guild.id, e
+            )
         if (idx + 1) % 3 == 0:
             await asyncio.sleep(0)
 
@@ -683,21 +712,32 @@ async def update_upcoming_live_messages() -> None:
             if not matches:
                 continue
 
-            # Build data tuples expected by _populate_list_embed: (match, team1, team2)
+            # Build data tuples expected by _populate_list_embed:
+            # (match, team1, team2)
             teams_map = await _bulk_fetch_teams(session, matches)
             data = []
             for m in matches:
                 t1, t2 = _resolve_teams(m, teams_map)
                 data.append((m, t1, t2))
 
-            # Build a simple upcoming embed using the same formatting as reminders
+            # Build a simple upcoming embed using the same formatting as
+            # reminders
             embed = discord.Embed(
                 title="⚔️ Upcoming Matches",
                 description="Matches coming up soon:",
                 color=discord.Color.blue(),
                 timestamp=datetime.now(timezone.utc),
             )
-            embed = _populate_list_embed(embed, data, lambda d: f"**{d[0].team1}** vs **{d[0].team2}** <t:{int(d[0].scheduled_time.timestamp())}:R>")
+            embed = _populate_list_embed(
+                embed,
+                data,
+                lambda d: (
+                    f"**{d[0].team1}** vs **{d[0].team2}** "
+                    f"<t:{int(d[0].scheduled_time.timestamp())}:R>"
+                ),
+            )
 
             context = f"upcoming live message for {len(matches)} matches"
-            await _deliver_embed(bot, embed, context, game, scope_type="upcoming")
+            await _deliver_embed(
+                bot, embed, context, game, scope_type="upcoming"
+            )

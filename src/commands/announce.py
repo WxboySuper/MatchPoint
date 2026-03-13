@@ -107,8 +107,9 @@ class AnnouncementModal(ui.Modal, title="Create Announcement"):
         embed.set_footer(text=announcement_details["label"])
 
         # Send the announcement immediately (preserve existing behavior/tests)
-        # Also persist a live-message pointer for admin announcements so the
-        # bot can update or reference the admin announcement channel later.
+        # Also persist a live-message pointer for admin announcements
+        # so the bot can update or reference the admin announcement channel
+        # later.
         # We use a dedicated scope_type so this does not conflict with the
         # canonical per-game live message slots (upcoming/running/results).
         new_msg = await channel.send(embed=embed)
@@ -117,7 +118,8 @@ class AnnouncementModal(ui.Modal, title="Create Announcement"):
             from src.crud import set_live_message
 
             with get_session() as session:
-                # Persist as scope_type 'announcement' and no scope_key (global)
+                # Persist as scope_type 'announcement' and no scope_key
+                # (global)
                 set_live_message(
                     session,
                     getattr(guild, "id", 0),

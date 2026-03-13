@@ -144,4 +144,6 @@ class LiveUpdateMessage(SQLModel, table=True):
     message_id: int = Field(index=True)
     scope_type: str = Field(default="guild_live")
     scope_key: Optional[str] = Field(default=None)
-    last_rendered_at: Optional[datetime] = Field(default=None, sa_column=Column(TZDateTime(), nullable=True))
+    last_rendered_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(TZDateTime(), nullable=True)
+    )
