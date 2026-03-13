@@ -13,6 +13,24 @@ from src.parsers.base import PandaScoreParser
 logger = logging.getLogger(__name__)
 
 
+def _extract_opponent_info(
+    match_data: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    opponents = match_data.get("opponents", [])
+    team_infos = [opponent.get("opponent", {}) for opponent in opponents[:2]]
+    while len(team_infos) < 2:
+        team_infos.append({})
+    return team_infos[0], team_infos[1]
+
+
+def _team_display_name(team_info: dict[str, Any]) -> str:
+    return team_info.get("name") or team_info.get("acronym") or "TBD"
+
+
+def _match_game_slug(match_data: dict[str, Any]) -> str:
+    return (match_data.get("videogame") or {}).get("slug") or "cs2"
+
+
 class CS2Parser(PandaScoreParser):
     """Parser for CS2 matches.
 
@@ -80,28 +98,14 @@ class CS2Parser(PandaScoreParser):
             )
             return None
 
-        opponents = match_data.get("opponents", [])
-
-        team1_info = (
-            opponents[0].get("opponent", {}) if len(opponents) > 0 else {}
-        )
-        team2_info = (
-            opponents[1].get("opponent", {}) if len(opponents) > 1 else {}
-        )
-
-        team1_name = (
-            team1_info.get("name") or team1_info.get("acronym") or "TBD"
-        )
-        team2_name = (
-            team2_info.get("name") or team2_info.get("acronym") or "TBD"
-        )
+        team1_info, team2_info = _extract_opponent_info(match_data)
 
         return {
             "pandascore_id": pandascore_id,
             "contest_id": contest_id,
-            "game": ((match_data.get("videogame") or {}).get("slug") or "cs2"),
-            "team1": team1_name,
-            "team2": team2_name,
+            "game": _match_game_slug(match_data),
+            "team1": _team_display_name(team1_info),
+            "team2": _team_display_name(team2_info),
             "team1_id": team1_info.get("id"),
             "team2_id": team2_info.get("id"),
             "best_of": match_data.get("number_of_games"),

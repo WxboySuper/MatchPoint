@@ -164,7 +164,8 @@ class TestLoLParser:
         assert result["team2_id"] == 200
         assert result["best_of"] == 3
 
-    def test_extract_match_data_uses_payload_game_slug(self, parser):
+    @staticmethod
+    def test_extract_match_data_uses_payload_game_slug(parser):
         match_data = {
             "id": 123456,
             "scheduled_at": "2024-03-15T10:00:00Z",
@@ -271,7 +272,8 @@ class TestCS2Parser:
 
         return CS2Parser()
 
-    def test_extract_match_data_sets_cs2_game(self, parser):
+    @staticmethod
+    def test_extract_match_data_sets_cs2_game(parser):
         match_data = {
             "id": 987654,
             "scheduled_at": "2024-03-15T10:00:00Z",

@@ -11,6 +11,24 @@ from src.parsers.base import PandaScoreParser
 logger = logging.getLogger(__name__)
 
 
+def _extract_opponent_info(
+    match_data: Dict[str, Any],
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    opponents = match_data.get("opponents", [])
+    team_infos = [opponent.get("opponent", {}) for opponent in opponents[:2]]
+    while len(team_infos) < 2:
+        team_infos.append({})
+    return team_infos[0], team_infos[1]
+
+
+def _team_display_name(team_info: Dict[str, Any]) -> str:
+    return team_info.get("name") or team_info.get("acronym") or "TBD"
+
+
+def _match_game_slug(match_data: Dict[str, Any]) -> str:
+    return (match_data.get("videogame") or {}).get("slug") or "lol"
+
+
 class LoLParser(PandaScoreParser):
     """Parser for League of Legends matches."""
 
@@ -68,29 +86,14 @@ class LoLParser(PandaScoreParser):
             logger.warning("Match missing id or scheduled_at: %s", match_data)
             return None
 
-        opponents = match_data.get("opponents", [])
-
-        # Extract team info, defaulting to TBD if missing
-        team1_info = (
-            opponents[0].get("opponent", {}) if len(opponents) > 0 else {}
-        )
-        team2_info = (
-            opponents[1].get("opponent", {}) if len(opponents) > 1 else {}
-        )
-
-        team1_name = (
-            team1_info.get("name") or team1_info.get("acronym") or "TBD"
-        )
-        team2_name = (
-            team2_info.get("name") or team2_info.get("acronym") or "TBD"
-        )
+        team1_info, team2_info = _extract_opponent_info(match_data)
 
         return {
             "pandascore_id": pandascore_id,
             "contest_id": contest_id,
-            "game": ((match_data.get("videogame") or {}).get("slug") or "lol"),
-            "team1": team1_name,
-            "team2": team2_name,
+            "game": _match_game_slug(match_data),
+            "team1": _team_display_name(team1_info),
+            "team2": _team_display_name(team2_info),
             "team1_id": team1_info.get("id"),
             "team2_id": team2_info.get("id"),
             "best_of": match_data.get("number_of_games"),

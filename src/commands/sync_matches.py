@@ -106,11 +106,7 @@ class SyncMatches(commands.Cog):
 
         try:
             await update_upcoming_live_messages()
-        except (
-            asyncio.TimeoutError,
-            discord.Forbidden,
-            discord.HTTPException,
-        ):
+        except (asyncio.TimeoutError, discord.HTTPException):
             logger.exception(
                 "Failed refreshing live messages manually for guild %s",
                 getattr(getattr(interaction, "guild", None), "id", None),
