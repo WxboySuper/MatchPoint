@@ -2,23 +2,28 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
+from dataclasses import dataclass
 
 import src.commands.config as config_commands
 
 
+@dataclass(frozen=True)
+class _GameCommandCase:
+    guild_id: int
+    command_name: str
+    game: str
+    loaded_games: object
+    stored_games: str
+    expected_games: list[str]
+    expected_message: str
+
+
 async def _assert_game_command_result(
     mocked_interaction,
-    *,
-    guild_id: int,
-    command_name: str,
-    game: str,
-    loaded_games,
-    stored_games: str,
-    expected_games: list[str],
-    expected_message: str,
+    case: _GameCommandCase,
 ):
-    mocked_interaction.guild.id = guild_id
-    command = getattr(config_commands, command_name)
+    mocked_interaction.guild.id = case.guild_id
+    command = getattr(config_commands, case.command_name)
 
     with patch.object(
         config_commands,
@@ -29,18 +34,18 @@ async def _assert_game_command_result(
         config_commands,
         "_load_enabled_games",
         new_callable=AsyncMock,
-        return_value=loaded_games,
+        return_value=case.loaded_games,
     ), patch.object(
         config_commands,
         "_update_enabled_games",
         new_callable=AsyncMock,
-        return_value=stored_games,
+        return_value=case.stored_games,
     ) as mock_update:
-        await command.callback(mocked_interaction, game)
+        await command.callback(mocked_interaction, case.game)
 
-    mock_update.assert_awaited_once_with(guild_id, expected_games)
+    mock_update.assert_awaited_once_with(case.guild_id, case.expected_games)
     mocked_interaction.followup.send.assert_awaited_once_with(
-        expected_message,
+        case.expected_message,
         ephemeral=True,
     )
 
@@ -130,13 +135,15 @@ async def test_set_games_rejects_unsupported_slug(mocked_interaction):
 async def test_add_game_updates_enabled_games(mocked_interaction):
     await _assert_game_command_result(
         mocked_interaction,
-        guild_id=101,
-        command_name="add_game",
-        game="cs2",
-        loaded_games=["lol"],
-        stored_games="lol,cs2",
-        expected_games=["lol", "cs2"],
-        expected_message="Enabled games: LoL, CS2",
+        _GameCommandCase(
+            guild_id=101,
+            command_name="add_game",
+            game="cs2",
+            loaded_games=["lol"],
+            stored_games="lol,cs2",
+            expected_games=["lol", "cs2"],
+            expected_message="Enabled games: LoL, CS2",
+        ),
     )
 
 
@@ -144,13 +151,15 @@ async def test_add_game_updates_enabled_games(mocked_interaction):
 async def test_add_game_handles_unset_enabled_games(mocked_interaction):
     await _assert_game_command_result(
         mocked_interaction,
-        guild_id=111,
-        command_name="add_game",
-        game="cs2",
-        loaded_games=None,
-        stored_games="cs2",
-        expected_games=["cs2"],
-        expected_message="Enabled games: CS2",
+        _GameCommandCase(
+            guild_id=111,
+            command_name="add_game",
+            game="cs2",
+            loaded_games=None,
+            stored_games="cs2",
+            expected_games=["cs2"],
+            expected_message="Enabled games: CS2",
+        ),
     )
 
 
@@ -158,13 +167,15 @@ async def test_add_game_handles_unset_enabled_games(mocked_interaction):
 async def test_remove_game_removes_enabled_slug(mocked_interaction):
     await _assert_game_command_result(
         mocked_interaction,
-        guild_id=202,
-        command_name="remove_game",
-        game="cs2",
-        loaded_games=["lol", "cs2"],
-        stored_games="lol",
-        expected_games=["lol"],
-        expected_message="Enabled games: LoL",
+        _GameCommandCase(
+            guild_id=202,
+            command_name="remove_game",
+            game="cs2",
+            loaded_games=["lol", "cs2"],
+            stored_games="lol",
+            expected_games=["lol"],
+            expected_message="Enabled games: LoL",
+        ),
     )
 
 
@@ -172,11 +183,13 @@ async def test_remove_game_removes_enabled_slug(mocked_interaction):
 async def test_remove_game_filters_stale_games(mocked_interaction):
     await _assert_game_command_result(
         mocked_interaction,
-        guild_id=303,
-        command_name="remove_game",
-        game="cs2",
-        loaded_games=["lol", "stale", "cs2"],
-        stored_games="lol",
-        expected_games=["lol"],
-        expected_message="Enabled games: LoL",
+        _GameCommandCase(
+            guild_id=303,
+            command_name="remove_game",
+            game="cs2",
+            loaded_games=["lol", "stale", "cs2"],
+            stored_games="lol",
+            expected_games=["lol"],
+            expected_message="Enabled games: LoL",
+        ),
     )
