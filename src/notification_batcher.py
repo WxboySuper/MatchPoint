@@ -11,10 +11,14 @@ from sqlmodel import func, or_, select
 
 from src.bot_instance import get_bot_instance
 from src.db import get_async_session
+from src.live_messages import (
+    refresh_all_live_messages,
+    refresh_live_messages_for_games,
+)
 from src.models import Match, Pick, Result, Team
-from src.notification_delivery import DeliveryRequest, deliver_embed
 
 logger = logging.getLogger(__name__)
+_upcoming_live_update_lock = asyncio.Lock()
 
 
 class BatchProcessorSpec:
@@ -177,8 +181,7 @@ async def _process_generic(
         build_embed: Function accepting list of data and returning an Embed.
         context_fmt: Format string for log context.
     """
-    bot = get_bot_instance()
-    if not bot:
+    if not get_bot_instance():
         return
 
     async with get_async_session() as session:
@@ -186,26 +189,18 @@ async def _process_generic(
         if not data_list:
             return
 
-        embed = spec.build_embed(data_list)
-        context = f"{spec.context_fmt} for {len(data_list)} matches"
+        games = _extract_games_from_batch(data_list)
 
-        # Derive game slug from the first match when available. Default to
-        # 'lol' for backwards compatibility.
-        try:
-            first_match = data_list[0][0]
-            game_slug = getattr(first_match, "game", "lol")
-        except Exception:
-            game_slug = "lol"
+    await refresh_live_messages_for_games(games)
 
-        await deliver_embed(
-            bot,
-            DeliveryRequest(
-                embed=embed,
-                context=context,
-                game_slug=game_slug,
-                scope_type=spec.scope_type,
-            ),
-        )
+
+def _extract_games_from_batch(data_list: List[Any]) -> set[str]:
+    games = set()
+    for item in data_list:
+        match = item[0] if item else None
+        game = getattr(match, "game", None) or "lol"
+        games.add(game)
+    return games
 
 
 async def _process_reminders(minutes: int, match_ids: List[int]):
@@ -561,68 +556,12 @@ batcher = NotificationBatcher()
 
 
 async def update_upcoming_live_messages() -> None:
-    """
-    Rebuild and deliver the "upcoming" live message for each configured
-    default game. This job is idempotent and uses the database as the
-    source-of-truth for upcoming matches.
-    """
-    bot = get_bot_instance()
-    if not bot:
+    """Refresh all canonical live messages from database state."""
+    if _upcoming_live_update_lock.locked():
+        logger.info(
+            "Skipping live message refresh; another refresh is running."
+        )
         return
 
-    from src.config import DEFAULT_GAMES
-
-    games = DEFAULT_GAMES or ["lol"]
-
-    async with get_async_session() as session:
-        for game in games:
-            # Fetch upcoming matches for this game (next 25)
-            now = datetime.now(timezone.utc)
-            stmt = (
-                select(Match)
-                .options(selectinload(Match.contest))
-                .where(Match.game == game)
-                .where(Match.status == "not_started")
-                .where(Match.scheduled_time >= now)
-                .order_by(Match.scheduled_time)
-                .limit(25)
-            )
-            matches = (await session.exec(stmt)).all()
-            if not matches:
-                continue
-
-            # Build data tuples expected by _populate_list_embed:
-            # (match, team1, team2)
-            teams_map = await _bulk_fetch_teams(session, matches)
-            data = []
-            for m in matches:
-                t1, t2 = _resolve_teams(m, teams_map)
-                data.append((m, t1, t2))
-
-            # Build a simple upcoming embed using the same formatting as
-            # reminders
-            embed = discord.Embed(
-                title="⚔️ Upcoming Matches",
-                description="Matches coming up soon:",
-                color=discord.Color.blue(),
-                timestamp=datetime.now(timezone.utc),
-            )
-            embed = _populate_list_embed(
-                embed,
-                data,
-                lambda d: (
-                    f"**{d[0].team1}** vs **{d[0].team2}** "
-                    f"<t:{int(d[0].scheduled_time.timestamp())}:R>"
-                ),
-            )
-
-            context = f"upcoming live message for {len(matches)} matches"
-            await deliver_embed(
-                bot,
-                DeliveryRequest(
-                    embed=embed,
-                    context=context,
-                    game_slug=game,
-                    scope_type="upcoming",
-                ),
-            )
+    async with _upcoming_live_update_lock:
+        await refresh_all_live_messages()

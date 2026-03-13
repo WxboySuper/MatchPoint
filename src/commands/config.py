@@ -1,13 +1,7 @@
-"""Guild configuration commands: view / set channels / set games
-
-Provides a minimal `/config` command group so guild admins can view and
-update persisted `GuildConfig` fields such as announcement/live channel IDs
-and enabled games (comma-separated slugs). Permission checks allow guild
-owners or members with `manage_guild`, falling back to the environment
-`ADMIN_IDS` list via `is_admin()`.
-"""
+"""Guild configuration commands: view / set channels / set games."""
 
 import logging
+from typing import Optional
 
 import discord
 from discord import app_commands
@@ -16,6 +10,8 @@ from discord.ext import commands
 from src.auth import is_admin
 from src.crud import get_guild_config_async, upsert_guild_config_async
 from src.db import get_async_session
+from src.live_messages import format_enabled_games
+from src.parsers.factory import get_supported_game_slugs
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +19,21 @@ logger = logging.getLogger(__name__)
 config_group = app_commands.Group(
     name="config", description="Manage guild configuration"
 )
+
+CHANNEL_KIND_CHOICES = [
+    app_commands.Choice(name="Announcement", value="announcement"),
+    app_commands.Choice(name="Live Updates", value="live_updates"),
+]
+
+
+def _format_channel(channel_id: Optional[int]) -> str:
+    if not channel_id:
+        return "(not set)"
+    return f"<#{channel_id}>"
+
+
+def _supported_games_text() -> str:
+    return ", ".join(game.upper() for game in get_supported_game_slugs())
 
 
 @config_group.command(
@@ -37,19 +48,14 @@ async def view(interaction: discord.Interaction):
 
     async with get_async_session() as session:
         cfg = await get_guild_config_async(session, interaction.guild.id)
-        if not cfg:
-            await interaction.response.send_message(
-                "No configuration found for this guild.", ephemeral=True
-            )
-            return
-
-        enabled = cfg.enabled_games or "(none)"
-        ann = cfg.announcement_channel_id or "(none)"
-        live = cfg.live_updates_channel_id or "(none)"
+        enabled = format_enabled_games(getattr(cfg, "enabled_games", None))
+        ann = _format_channel(getattr(cfg, "announcement_channel_id", None))
+        live = _format_channel(getattr(cfg, "live_updates_channel_id", None))
         message = (
             f"Announcement channel: {ann}\n"
             f"Live updates channel: {live}\n"
-            f"Enabled games: {enabled}"
+            f"Enabled games: {enabled}\n"
+            f"Supported games: {_supported_games_text()}"
         )
         await interaction.response.send_message(message, ephemeral=True)
 
@@ -110,12 +116,15 @@ async def _update_guild_channel(guild_id: int, field: str, value: int) -> None:
 @config_group.command(
     name="set_channel", description="Set announcement or live updates channel"
 )
+@app_commands.choices(kind=CHANNEL_KIND_CHOICES)
 @app_commands.describe(
-    kind="Which channel to set: announcement or live",
+    kind="Which channel setting to update",
     channel="Text channel to use",
 )
 async def set_channel(
-    interaction: discord.Interaction, kind: str, channel: discord.TextChannel
+    interaction: discord.Interaction,
+    kind: app_commands.Choice[str],
+    channel: discord.TextChannel,
 ):
     # Permission check
     if not await _has_config_permission(interaction):
@@ -129,13 +138,15 @@ async def set_channel(
         )
         return
 
-    if kind.lower() in ("announcement", "announce"):
+    if kind.value == "announcement":
         field = "announcement_channel_id"
-    elif kind.lower() in ("live", "live_updates"):
+        label = "announcement"
+    elif kind.value == "live_updates":
         field = "live_updates_channel_id"
+        label = "live updates"
     else:
         await interaction.followup.send(
-            "Unknown channel kind. Use 'announcement' or 'live'.",
+            "Unknown channel kind selected.",
             ephemeral=True,
         )
         return
@@ -143,7 +154,8 @@ async def set_channel(
     try:
         await _update_guild_channel(guild_id, field, channel.id)
         await interaction.followup.send(
-            "Configuration updated.", ephemeral=True
+            f"Updated {label} channel to {channel.mention}.",
+            ephemeral=True,
         )
     except Exception:
         logger.exception("Failed updating guild config for %s", guild_id)
@@ -169,22 +181,78 @@ async def set_games(interaction: discord.Interaction, games: str):
         )
         return
 
-    normalized = ",".join(
-        [g.strip().lower() for g in games.split(",") if g.strip()]
-    )
+    normalized = _normalize_games_value(games)
+    if normalized is None:
+        await interaction.followup.send(
+            "Invalid games list. Use supported slugs: "
+            f"{_supported_games_text()}",
+            ephemeral=True,
+        )
+        return
+
     try:
         async with get_async_session() as session:
             await upsert_guild_config_async(
                 session, guild_id, enabled_games=normalized
             )
         await interaction.followup.send(
-            f"Enabled games set to: {normalized}", ephemeral=True
+            f"Enabled games set to: {format_enabled_games(normalized)}",
+            ephemeral=True,
         )
     except Exception:
         logger.exception("Failed updating enabled_games for %s", guild_id)
         await interaction.followup.send(
             "Failed to update enabled games.", ephemeral=True
         )
+
+
+def _normalize_games_value(raw_games: str) -> Optional[str]:
+    supported = set(get_supported_game_slugs())
+    normalized = []
+    seen = set()
+    for raw in raw_games.split(","):
+        game = raw.strip().lower()
+        if not game:
+            continue
+        if game not in supported:
+            return None
+        if game in seen:
+            continue
+        seen.add(game)
+        normalized.append(game)
+
+    if not normalized:
+        return None
+    return ",".join(normalized)
+
+
+@set_games.autocomplete("games")
+async def _games_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    _ = interaction
+    supported = list(get_supported_game_slugs())
+    entries = [item.strip() for item in current.split(",")]
+    prefix = ",".join(entry for entry in entries[:-1] if entry)
+    current_token = entries[-1].strip().lower() if entries else ""
+    already_selected = {
+        entry.strip().lower() for entry in entries[:-1] if entry
+    }
+
+    choices = []
+    for game in supported:
+        if game in already_selected:
+            continue
+        if current_token and not game.startswith(current_token):
+            continue
+        value = f"{prefix},{game}" if prefix else game
+        choices.append(
+            app_commands.Choice(
+                name=format_enabled_games(game),
+                value=value,
+            )
+        )
+    return choices[:25]
 
 
 async def setup(bot: commands.Bot):

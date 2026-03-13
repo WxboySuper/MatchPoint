@@ -12,6 +12,10 @@ _PARSERS = {
 }
 
 
+def get_supported_game_slugs() -> tuple[str, ...]:
+    return tuple(_PARSERS.keys())
+
+
 def get_parser(game_slug: str) -> Optional[PandaScoreParser]:
     cls = _PARSERS.get(game_slug)
     if cls is None:

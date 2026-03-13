@@ -3,7 +3,6 @@ import asyncio
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 import src.notification_batcher
-import src.notification_delivery
 from src.notification_batcher import NotificationBatcher
 from src.models import Match, Contest
 
@@ -22,28 +21,18 @@ async def test_batch_reminders():
     ), patch.object(
         src.notification_batcher, "get_async_session"
     ) as mock_batcher_session_cls, patch.object(
-        src.notification_delivery, "get_async_session"
-    ) as mock_delivery_session_cls, patch.object(
-        src.notification_delivery,
-        "broadcast_embed_to_guilds",
+        src.notification_batcher,
+        "refresh_live_messages_for_games",
         new_callable=AsyncMock,
-    ) as mock_broadcast, patch.object(
+    ) as mock_refresh, patch.object(
         src.notification_batcher, "_bulk_fetch_matches", new_callable=AsyncMock
     ) as mock_bulk_matches, patch.object(
         src.notification_batcher, "_bulk_fetch_teams", new_callable=AsyncMock
     ) as mock_bulk_teams, patch.object(
         src.notification_batcher, "_resolve_teams"
-    ) as mock_resolve_teams, patch.object(
-        src.notification_delivery,
-        "get_guild_config_async",
-        new_callable=AsyncMock,
-        return_value=None,
-    ):
+    ) as mock_resolve_teams:
 
         mock_batcher_session_cls.return_value.__aenter__.return_value = (
-            mock_session
-        )
-        mock_delivery_session_cls.return_value.__aenter__.return_value = (
             mock_session
         )
 
@@ -82,12 +71,7 @@ async def test_batch_reminders():
         assert len(batcher._pending["reminder_5"]) == 2
         await asyncio.sleep(1.1)
 
-        assert mock_broadcast.call_count == 1
-        args, _ = mock_broadcast.call_args
-        embed = args[1]
-        assert "Team A" in embed.description
-        assert "Team C" in embed.description
-        assert embed.thumbnail.url == "http://example.com/icon.png"
+        mock_refresh.assert_awaited_once_with({"lol"})
 
 
 @pytest.mark.asyncio
@@ -101,12 +85,10 @@ async def test_batch_results():
     ), patch.object(
         src.notification_batcher, "get_async_session"
     ) as mock_batcher_session_cls, patch.object(
-        src.notification_delivery, "get_async_session"
-    ) as mock_delivery_session_cls, patch.object(
-        src.notification_delivery,
-        "broadcast_embed_to_guilds",
+        src.notification_batcher,
+        "refresh_live_messages_for_games",
         new_callable=AsyncMock,
-    ) as mock_broadcast, patch.object(
+    ) as mock_refresh, patch.object(
         src.notification_batcher, "_bulk_fetch_matches", new_callable=AsyncMock
     ) as mock_bulk_matches, patch.object(
         src.notification_batcher, "_bulk_fetch_teams", new_callable=AsyncMock
@@ -119,9 +101,6 @@ async def test_batch_results():
     ) as mock_resolve_teams:
 
         mock_batcher_session_cls.return_value.__aenter__.return_value = (
-            mock_session
-        )
-        mock_delivery_session_cls.return_value.__aenter__.return_value = (
             mock_session
         )
         now = datetime.now(timezone.utc)
@@ -161,11 +140,7 @@ async def test_batch_results():
 
         await asyncio.sleep(1.1)
 
-        assert mock_broadcast.call_count == 1
-        args, _ = mock_broadcast.call_args
-        embed = args[1]
-        assert "A" in embed.fields[0].value
-        assert "D" in embed.fields[1].value
+        mock_refresh.assert_awaited_once_with({"lol"})
 
 
 @pytest.mark.asyncio
@@ -178,12 +153,10 @@ async def test_explicit_batching_mode():
     ), patch.object(
         src.notification_batcher, "get_async_session"
     ) as mock_batcher_session_cls, patch.object(
-        src.notification_delivery, "get_async_session"
-    ) as mock_delivery_session_cls, patch.object(
-        src.notification_delivery,
-        "broadcast_embed_to_guilds",
+        src.notification_batcher,
+        "refresh_live_messages_for_games",
         new_callable=AsyncMock,
-    ) as mock_broadcast, patch.object(
+    ) as mock_refresh, patch.object(
         src.notification_batcher, "_bulk_fetch_matches", new_callable=AsyncMock
     ) as mock_bulk_matches, patch.object(
         src.notification_batcher, "_bulk_fetch_teams", new_callable=AsyncMock
@@ -194,13 +167,18 @@ async def test_explicit_batching_mode():
         mock_batcher_session_cls.return_value.__aenter__.return_value = (
             mock_session
         )
-        mock_delivery_session_cls.return_value.__aenter__.return_value = (
-            mock_session
-        )
 
-        match1 = MagicMock(id=1, scheduled_time=datetime.now(timezone.utc))
+        match1 = MagicMock(
+            id=1,
+            scheduled_time=datetime.now(timezone.utc),
+            game="lol",
+        )
         match1.contest = MagicMock(image_url=None)
-        match2 = MagicMock(id=2, scheduled_time=datetime.now(timezone.utc))
+        match2 = MagicMock(
+            id=2,
+            scheduled_time=datetime.now(timezone.utc),
+            game="lol",
+        )
         match2.contest = MagicMock(image_url=None)
 
         mock_bulk_matches.return_value = [match1, match2]
@@ -210,9 +188,9 @@ async def test_explicit_batching_mode():
         async with batcher.batching():
             await batcher.add_reminder(1, 5)
             await asyncio.sleep(1.1)
-            assert mock_broadcast.call_count == 0
+            assert mock_refresh.call_count == 0
             assert len(batcher._pending["reminder_5"]) == 1
             await batcher.add_reminder(2, 5)
 
-        assert mock_broadcast.call_count == 1
+        mock_refresh.assert_awaited_once_with({"lol"})
         assert len(batcher._pending["reminder_5"]) == 0
