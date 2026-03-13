@@ -96,7 +96,7 @@ async def test_modal_on_submit(mock_bot, mock_interaction, monkeypatch):
         )
         category = mock_interaction.guild.create_category.return_value
         category.create_text_channel.assert_called_once()
-        args, kwargs = category.create_text_channel.call_args
+        args, _ = category.create_text_channel.call_args
         assert args[0] == CHANNEL_NAME
 
         channel = category.create_text_channel.return_value

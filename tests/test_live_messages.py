@@ -9,6 +9,41 @@ from src.notification_batcher import NotificationBatcher
 from src.models import Match, Contest
 
 
+def _build_live_message_test_match(match_id: int) -> Match:
+    now = datetime.now(timezone.utc)
+    contest = Contest(name="C1", image_url=None, start_date=now, end_date=now)
+    match = Match(
+        id=match_id,
+        team1="A" if match_id == 1 else "X",
+        team2="B" if match_id == 1 else "Y",
+        scheduled_time=now,
+        contest_id=1,
+        game="lol",
+    )
+    match.contest = contest
+    return match
+
+
+def _configure_batcher_mocks(
+    mock_batcher_session_cls,
+    mock_delivery_session_cls,
+    mock_session,
+    mock_bulk_matches,
+    mock_bulk_teams,
+    mock_resolve_teams,
+    match,
+) -> None:
+    mock_batcher_session_cls.return_value.__aenter__.return_value = (
+        mock_session
+    )
+    mock_delivery_session_cls.return_value.__aenter__.return_value = (
+        mock_session
+    )
+    mock_bulk_matches.return_value = [match]
+    mock_bulk_teams.return_value = {}
+    mock_resolve_teams.return_value = (None, None)
+
+
 @pytest.mark.asyncio
 async def test_scoped_live_message_editing_and_creation():
     """Verify that the batcher will attempt to edit an existing live message
@@ -38,17 +73,7 @@ async def test_scoped_live_message_editing_and_creation():
     # Mock DB session to initially return no live message, then ensure set is called
     mock_session = AsyncMock()
 
-    now = datetime.now(timezone.utc)
-    contest = Contest(name="C1", image_url=None, start_date=now, end_date=now)
-    match = Match(
-        id=1,
-        team1="A",
-        team2="B",
-        scheduled_time=now,
-        contest_id=1,
-        game="lol",
-    )
-    match.contest = contest
+    match = _build_live_message_test_match(1)
 
     # Patch get_bot_instance and session helpers and bulk fetches
     cfg_obj = MagicMock()
@@ -81,15 +106,15 @@ async def test_scoped_live_message_editing_and_creation():
         return_value=None,
     ):
 
-        mock_batcher_session_cls.return_value.__aenter__.return_value = (
-            mock_session
+        _configure_batcher_mocks(
+            mock_batcher_session_cls,
+            mock_delivery_session_cls,
+            mock_session,
+            mock_bulk_matches,
+            mock_bulk_teams,
+            mock_resolve_teams,
+            match,
         )
-        mock_delivery_session_cls.return_value.__aenter__.return_value = (
-            mock_session
-        )
-        mock_bulk_matches.return_value = [match]
-        mock_bulk_teams.return_value = {}
-        mock_resolve_teams.return_value = (None, None)
 
         # Trigger a reminder (mapped to upcoming scope)
         await batcher.add_reminder(match.id, 5)
@@ -131,18 +156,7 @@ async def test_mid_series_updates_edit_existing_message():
 
     mock_session = AsyncMock()
 
-    now = datetime.now(timezone.utc)
-    match = Match(
-        id=11,
-        team1="X",
-        team2="Y",
-        scheduled_time=now,
-        contest_id=1,
-        game="lol",
-    )
-    match.contest = Contest(
-        name="C", image_url=None, start_date=now, end_date=now
-    )
+    match = _build_live_message_test_match(11)
 
     with patch.object(
         nb, "get_bot_instance", return_value=mock_bot
@@ -172,15 +186,15 @@ async def test_mid_series_updates_edit_existing_message():
             ),
         ):
 
-            mock_batcher_session_cls.return_value.__aenter__.return_value = (
-                mock_session
+            _configure_batcher_mocks(
+                mock_batcher_session_cls,
+                mock_delivery_session_cls,
+                mock_session,
+                mock_bulk_matches,
+                mock_bulk_teams,
+                mock_resolve_teams,
+                match,
             )
-            mock_delivery_session_cls.return_value.__aenter__.return_value = (
-                mock_session
-            )
-            mock_bulk_matches.return_value = [match]
-            mock_bulk_teams.return_value = {}
-            mock_resolve_teams.return_value = (None, None)
 
             mock_get_live.return_value = live_rec
 

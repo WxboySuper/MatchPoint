@@ -93,6 +93,17 @@ def _build_live_message(
     )
 
 
+def _get_or_create_live_message(
+    rec: Optional[LiveUpdateMessage],
+    target: LiveMessageTarget,
+    payload: LiveMessagePayload,
+) -> tuple[LiveUpdateMessage, bool]:
+    now = datetime.now(timezone.utc)
+    if rec is None:
+        return _build_live_message(target, payload, now), True
+    return _apply_live_message(rec, target, payload, now), False
+
+
 def set_live_message_v2(
     session,
     target: LiveMessageTarget,
@@ -151,12 +162,9 @@ def set_live_message(
         normalized_payload.scope_type,
         normalized_payload.scope_key,
     )
-    now = datetime.now(timezone.utc)
-    if rec is None:
-        rec = _build_live_message(target, normalized_payload, now)
+    rec, is_new = _get_or_create_live_message(rec, target, normalized_payload)
+    if is_new:
         session.add(rec)
-    else:
-        _apply_live_message(rec, target, normalized_payload, now)
     session.commit()
     session.refresh(rec)
     return rec
@@ -168,10 +176,9 @@ def delete_live_message(
     scope_type: Optional[str] = None,
     scope_key: Optional[str] = None,
 ) -> None:
-    rec = get_live_message(session, guild_id, scope_type, scope_key)
-    if rec:
-        session.delete(rec)
-        session.commit()
+    _delete_live_message_record(
+        session, get_live_message(session, guild_id, scope_type, scope_key)
+    )
 
 
 # Async helpers for runtime code paths
@@ -210,15 +217,9 @@ async def set_live_message_async(
         normalized_payload.scope_type,
         normalized_payload.scope_key,
     )
-    now = datetime.now(timezone.utc)
-    if rec is None:
-        rec = _build_live_message(target, normalized_payload, now)
+    rec, is_new = _get_or_create_live_message(rec, target, normalized_payload)
+    if is_new:
         session.add(rec)
-        await session.commit()
-        await session.refresh(rec)
-        return rec
-
-    _apply_live_message(rec, target, normalized_payload, now)
     await session.commit()
     await session.refresh(rec)
     return rec
@@ -233,6 +234,22 @@ async def delete_live_message_async(
     rec = await get_live_message_async(
         session, guild_id, scope_type=scope_type, scope_key=scope_key
     )
-    if rec:
-        await session.delete(rec)
-        await session.commit()
+    await _delete_live_message_record_async(session, rec)
+
+
+def _delete_live_message_record(
+    session, rec: Optional[LiveUpdateMessage]
+) -> None:
+    if rec is None:
+        return
+    session.delete(rec)
+    session.commit()
+
+
+async def _delete_live_message_record_async(
+    session: AsyncSession, rec: Optional[LiveUpdateMessage]
+) -> None:
+    if rec is None:
+        return
+    await session.delete(rec)
+    await session.commit()

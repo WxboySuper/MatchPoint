@@ -17,6 +17,20 @@ from src.notification_delivery import DeliveryRequest, deliver_embed
 logger = logging.getLogger(__name__)
 
 
+class BatchProcessorSpec:
+    def __init__(
+        self,
+        fetch_batch: Callable[[Any, List[Any]], Any],
+        build_embed: Callable[[List[Any]], discord.Embed],
+        context_fmt: str,
+        scope_type: Optional[str] = None,
+    ):
+        self.fetch_batch = fetch_batch
+        self.build_embed = build_embed
+        self.context_fmt = context_fmt
+        self.scope_type = scope_type
+
+
 class NotificationBatcher:
     def __init__(self):
         self._pending = defaultdict(list)
@@ -151,10 +165,7 @@ async def _process_batch(key: str, items: List[Any]):
 
 async def _process_generic(
     items: List[Any],
-    fetch_batch: Callable[[Any, List[Any]], Any],
-    build_embed: Callable[[List[Any]], discord.Embed],
-    context_fmt: str,
-    scope_type: Optional[str] = None,
+    spec: BatchProcessorSpec,
 ):
     """
     Generic processor for batch items using bulk fetching.
@@ -171,12 +182,12 @@ async def _process_generic(
         return
 
     async with get_async_session() as session:
-        data_list = await fetch_batch(session, items)
+        data_list = await spec.fetch_batch(session, items)
         if not data_list:
             return
 
-        embed = build_embed(data_list)
-        context = f"{context_fmt} for {len(data_list)} matches"
+        embed = spec.build_embed(data_list)
+        context = f"{spec.context_fmt} for {len(data_list)} matches"
 
         # Derive game slug from the first match when available. Default to
         # 'lol' for backwards compatibility.
@@ -192,7 +203,7 @@ async def _process_generic(
                 embed=embed,
                 context=context,
                 game_slug=game_slug,
-                scope_type=scope_type,
+                scope_type=spec.scope_type,
             ),
         )
 
@@ -203,10 +214,12 @@ async def _process_reminders(minutes: int, match_ids: List[int]):
 
     await _process_generic(
         match_ids,
-        _fetch_reminders_batch,
-        build,
-        f"{minutes}-minute reminder",
-        scope_type="upcoming",
+        BatchProcessorSpec(
+            fetch_batch=_fetch_reminders_batch,
+            build_embed=build,
+            context_fmt=f"{minutes}-minute reminder",
+            scope_type="upcoming",
+        ),
     )
 
 
@@ -226,10 +239,12 @@ async def _fetch_reminders_batch(session, ids):
 async def _process_results(items: List[Tuple[int, int]]):
     await _process_generic(
         items,
-        _fetch_results_batch,
-        _build_result_embed,
-        "result notification",
-        scope_type="results",
+        BatchProcessorSpec(
+            fetch_batch=_fetch_results_batch,
+            build_embed=_build_result_embed,
+            context_fmt="result notification",
+            scope_type="results",
+        ),
     )
 
 
@@ -270,20 +285,24 @@ async def _fetch_results_batch(session, item_list):
 async def _process_time_changes(items: List[Tuple[int, Any, Any]]):
     await _process_generic(
         items,
-        _fetch_simple_batch,
-        _build_time_change_embed,
-        "time change notification",
-        scope_type="upcoming",
+        BatchProcessorSpec(
+            fetch_batch=_fetch_simple_batch,
+            build_embed=_build_time_change_embed,
+            context_fmt="time change notification",
+            scope_type="upcoming",
+        ),
     )
 
 
 async def _process_mid_series(items: List[Tuple[int, str]]):
     await _process_generic(
         items,
-        _fetch_simple_batch,
-        _build_mid_series_embed,
-        "mid-series update",
-        scope_type="running",
+        BatchProcessorSpec(
+            fetch_batch=_fetch_simple_batch,
+            build_embed=_build_mid_series_embed,
+            context_fmt="mid-series update",
+            scope_type="running",
+        ),
     )
 
 
