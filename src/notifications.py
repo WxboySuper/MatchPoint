@@ -20,6 +20,8 @@ async def send_mid_series_update(match: Match, score: str):
     batcher.
     """
     logger.info("Queuing mid-series update for match %s", match.id)
+    # Route mid-series updates to the batcher; batcher will determine
+    # whether to broadcast as edits to a tracked message or as embeds.
     await batcher.add_mid_series_update(match.id, score)
 
 

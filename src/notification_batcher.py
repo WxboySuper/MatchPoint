@@ -1,20 +1,34 @@
 import asyncio
 import logging
 from collections import defaultdict
-from datetime import datetime, timezone
-from typing import Optional, List, Tuple, Any, AsyncGenerator, Callable
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import Any, AsyncGenerator, Callable, List, Optional, Tuple
 
 import discord
-from sqlmodel import select, or_, func
 from sqlalchemy.orm import selectinload
+from sqlmodel import func, or_, select
 
-from src.db import get_async_session
-from src.models import Match, Result, Pick, Team
-from src.announcements import broadcast_embed_to_guilds
 from src.bot_instance import get_bot_instance
+from src.db import get_async_session
+from src.models import Match, Pick, Result, Team
+from src.notification_delivery import DeliveryRequest, deliver_embed
 
 logger = logging.getLogger(__name__)
+
+
+class BatchProcessorSpec:
+    def __init__(
+        self,
+        fetch_batch: Callable[[Any, List[Any]], Any],
+        build_embed: Callable[[List[Any]], discord.Embed],
+        context_fmt: str,
+        scope_type: Optional[str] = None,
+    ):
+        self.fetch_batch = fetch_batch
+        self.build_embed = build_embed
+        self.context_fmt = context_fmt
+        self.scope_type = scope_type
 
 
 class NotificationBatcher:
@@ -151,9 +165,7 @@ async def _process_batch(key: str, items: List[Any]):
 
 async def _process_generic(
     items: List[Any],
-    fetch_batch: Callable[[Any, List[Any]], Any],
-    build_embed: Callable[[List[Any]], discord.Embed],
-    context_fmt: str,
+    spec: BatchProcessorSpec,
 ):
     """
     Generic processor for batch items using bulk fetching.
@@ -170,13 +182,30 @@ async def _process_generic(
         return
 
     async with get_async_session() as session:
-        data_list = await fetch_batch(session, items)
+        data_list = await spec.fetch_batch(session, items)
         if not data_list:
             return
 
-        embed = build_embed(data_list)
-        context = f"{context_fmt} for {len(data_list)} matches"
-        await broadcast_embed_to_guilds(bot, embed, context)
+        embed = spec.build_embed(data_list)
+        context = f"{spec.context_fmt} for {len(data_list)} matches"
+
+        # Derive game slug from the first match when available. Default to
+        # 'lol' for backwards compatibility.
+        try:
+            first_match = data_list[0][0]
+            game_slug = getattr(first_match, "game", "lol")
+        except Exception:
+            game_slug = "lol"
+
+        await deliver_embed(
+            bot,
+            DeliveryRequest(
+                embed=embed,
+                context=context,
+                game_slug=game_slug,
+                scope_type=spec.scope_type,
+            ),
+        )
 
 
 async def _process_reminders(minutes: int, match_ids: List[int]):
@@ -184,7 +213,13 @@ async def _process_reminders(minutes: int, match_ids: List[int]):
         return _build_reminder_embed(minutes, data_list)
 
     await _process_generic(
-        match_ids, _fetch_reminders_batch, build, f"{minutes}-minute reminder"
+        match_ids,
+        BatchProcessorSpec(
+            fetch_batch=_fetch_reminders_batch,
+            build_embed=build,
+            context_fmt=f"{minutes}-minute reminder",
+            scope_type="upcoming",
+        ),
     )
 
 
@@ -204,9 +239,12 @@ async def _fetch_reminders_batch(session, ids):
 async def _process_results(items: List[Tuple[int, int]]):
     await _process_generic(
         items,
-        _fetch_results_batch,
-        _build_result_embed,
-        "result notification",
+        BatchProcessorSpec(
+            fetch_batch=_fetch_results_batch,
+            build_embed=_build_result_embed,
+            context_fmt="result notification",
+            scope_type="results",
+        ),
     )
 
 
@@ -247,18 +285,24 @@ async def _fetch_results_batch(session, item_list):
 async def _process_time_changes(items: List[Tuple[int, Any, Any]]):
     await _process_generic(
         items,
-        _fetch_simple_batch,
-        _build_time_change_embed,
-        "time change notification",
+        BatchProcessorSpec(
+            fetch_batch=_fetch_simple_batch,
+            build_embed=_build_time_change_embed,
+            context_fmt="time change notification",
+            scope_type="upcoming",
+        ),
     )
 
 
 async def _process_mid_series(items: List[Tuple[int, str]]):
     await _process_generic(
         items,
-        _fetch_simple_batch,
-        _build_mid_series_embed,
-        "mid-series update",
+        BatchProcessorSpec(
+            fetch_batch=_fetch_simple_batch,
+            build_embed=_build_mid_series_embed,
+            context_fmt="mid-series update",
+            scope_type="running",
+        ),
     )
 
 
@@ -514,3 +558,71 @@ def _populate_list_embed(
 
 # Global instance
 batcher = NotificationBatcher()
+
+
+async def update_upcoming_live_messages() -> None:
+    """
+    Rebuild and deliver the "upcoming" live message for each configured
+    default game. This job is idempotent and uses the database as the
+    source-of-truth for upcoming matches.
+    """
+    bot = get_bot_instance()
+    if not bot:
+        return
+
+    from src.config import DEFAULT_GAMES
+
+    games = DEFAULT_GAMES or ["lol"]
+
+    async with get_async_session() as session:
+        for game in games:
+            # Fetch upcoming matches for this game (next 25)
+            now = datetime.now(timezone.utc)
+            stmt = (
+                select(Match)
+                .options(selectinload(Match.contest))
+                .where(Match.game == game)
+                .where(Match.status == "not_started")
+                .where(Match.scheduled_time >= now)
+                .order_by(Match.scheduled_time)
+                .limit(25)
+            )
+            matches = (await session.exec(stmt)).all()
+            if not matches:
+                continue
+
+            # Build data tuples expected by _populate_list_embed:
+            # (match, team1, team2)
+            teams_map = await _bulk_fetch_teams(session, matches)
+            data = []
+            for m in matches:
+                t1, t2 = _resolve_teams(m, teams_map)
+                data.append((m, t1, t2))
+
+            # Build a simple upcoming embed using the same formatting as
+            # reminders
+            embed = discord.Embed(
+                title="⚔️ Upcoming Matches",
+                description="Matches coming up soon:",
+                color=discord.Color.blue(),
+                timestamp=datetime.now(timezone.utc),
+            )
+            embed = _populate_list_embed(
+                embed,
+                data,
+                lambda d: (
+                    f"**{d[0].team1}** vs **{d[0].team2}** "
+                    f"<t:{int(d[0].scheduled_time.timestamp())}:R>"
+                ),
+            )
+
+            context = f"upcoming live message for {len(matches)} matches"
+            await deliver_embed(
+                bot,
+                DeliveryRequest(
+                    embed=embed,
+                    context=context,
+                    game_slug=game,
+                    scope_type="upcoming",
+                ),
+            )

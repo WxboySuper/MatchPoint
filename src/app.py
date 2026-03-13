@@ -38,6 +38,7 @@ intents.members = True
 
 class EsportsBot(commands.Bot):
     COMMAND_MODULES = [
+        "config",
         "ping",
         "info",
         "contest",

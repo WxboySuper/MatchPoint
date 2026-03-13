@@ -76,25 +76,38 @@ async def test_modal_on_submit(mock_bot, mock_interaction, monkeypatch):
     modal.title_input = MagicMock(spec=ui.TextInput, value="Test Title")
     modal.message_input = MagicMock(spec=ui.TextInput, value="Test Message")
 
-    # Act
-    await modal.on_submit(mock_interaction)
+    mock_session = AsyncMock()
+    with patch(
+        "src.commands.announce.get_async_session"
+    ) as mock_session_factory, patch(
+        "src.commands.announce.set_live_message_async",
+        new_callable=AsyncMock,
+    ) as mock_set_live_message:
+        mock_session_factory.return_value.__aenter__.return_value = (
+            mock_session
+        )
 
-    # Assert
-    mock_interaction.guild.create_category.assert_called_once_with(
-        CATEGORY_NAME
-    )
-    category = mock_interaction.guild.create_category.return_value
-    category.create_text_channel.assert_called_once()
-    args, kwargs = category.create_text_channel.call_args
-    assert args[0] == CHANNEL_NAME
+        # Act
+        await modal.on_submit(mock_interaction)
 
-    channel = category.create_text_channel.return_value
-    channel.send.assert_called_once()
-    embed = channel.send.call_args[1]["embed"]
-    assert embed.title == "Test Title"
-    assert embed.description == "Test Message"
-    assert "Update Notification" in embed.footer.text
+        # Assert
+        mock_interaction.guild.create_category.assert_called_once_with(
+            CATEGORY_NAME
+        )
+        category = mock_interaction.guild.create_category.return_value
+        category.create_text_channel.assert_called_once()
+        args, _ = category.create_text_channel.call_args
+        assert args[0] == CHANNEL_NAME
 
-    mock_interaction.followup.send.assert_called_once_with(
-        f"Announcement successfully sent to #{channel.name}!", ephemeral=True
-    )
+        channel = category.create_text_channel.return_value
+        channel.send.assert_called_once()
+        embed = channel.send.call_args[1]["embed"]
+        assert embed.title == "Test Title"
+        assert embed.description == "Test Message"
+        assert "Update Notification" in embed.footer.text
+        mock_set_live_message.assert_awaited_once()
+
+        mock_interaction.followup.send.assert_called_once_with(
+            f"Announcement successfully sent to #{channel.name}!",
+            ephemeral=True,
+        )

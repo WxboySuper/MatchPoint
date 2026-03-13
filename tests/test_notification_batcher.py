@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 import src.notification_batcher
+import src.notification_delivery
 from src.notification_batcher import NotificationBatcher
 from src.models import Match, Contest
 
@@ -20,8 +21,10 @@ async def test_batch_reminders():
         src.notification_batcher, "get_bot_instance", return_value=mock_bot
     ), patch.object(
         src.notification_batcher, "get_async_session"
-    ) as mock_session_cls, patch.object(
-        src.notification_batcher,
+    ) as mock_batcher_session_cls, patch.object(
+        src.notification_delivery, "get_async_session"
+    ) as mock_delivery_session_cls, patch.object(
+        src.notification_delivery,
         "broadcast_embed_to_guilds",
         new_callable=AsyncMock,
     ) as mock_broadcast, patch.object(
@@ -30,9 +33,19 @@ async def test_batch_reminders():
         src.notification_batcher, "_bulk_fetch_teams", new_callable=AsyncMock
     ) as mock_bulk_teams, patch.object(
         src.notification_batcher, "_resolve_teams"
-    ) as mock_resolve_teams:
+    ) as mock_resolve_teams, patch.object(
+        src.notification_delivery,
+        "get_guild_config_async",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
 
-        mock_session_cls.return_value.__aenter__.return_value = mock_session
+        mock_batcher_session_cls.return_value.__aenter__.return_value = (
+            mock_session
+        )
+        mock_delivery_session_cls.return_value.__aenter__.return_value = (
+            mock_session
+        )
 
         now = datetime.now(timezone.utc)
         contest = Contest(
@@ -87,8 +100,10 @@ async def test_batch_results():
         src.notification_batcher, "get_bot_instance", return_value=mock_bot
     ), patch.object(
         src.notification_batcher, "get_async_session"
-    ) as mock_session_cls, patch.object(
-        src.notification_batcher,
+    ) as mock_batcher_session_cls, patch.object(
+        src.notification_delivery, "get_async_session"
+    ) as mock_delivery_session_cls, patch.object(
+        src.notification_delivery,
         "broadcast_embed_to_guilds",
         new_callable=AsyncMock,
     ) as mock_broadcast, patch.object(
@@ -103,8 +118,12 @@ async def test_batch_results():
         src.notification_batcher, "_resolve_teams"
     ) as mock_resolve_teams:
 
-        mock_session_cls.return_value.__aenter__.return_value = mock_session
-
+        mock_batcher_session_cls.return_value.__aenter__.return_value = (
+            mock_session
+        )
+        mock_delivery_session_cls.return_value.__aenter__.return_value = (
+            mock_session
+        )
         now = datetime.now(timezone.utc)
         contest = Contest(
             name="C1",
@@ -158,8 +177,10 @@ async def test_explicit_batching_mode():
         src.notification_batcher, "get_bot_instance", return_value=MagicMock()
     ), patch.object(
         src.notification_batcher, "get_async_session"
-    ) as mock_session_cls, patch.object(
-        src.notification_batcher,
+    ) as mock_batcher_session_cls, patch.object(
+        src.notification_delivery, "get_async_session"
+    ) as mock_delivery_session_cls, patch.object(
+        src.notification_delivery,
         "broadcast_embed_to_guilds",
         new_callable=AsyncMock,
     ) as mock_broadcast, patch.object(
@@ -170,7 +191,12 @@ async def test_explicit_batching_mode():
         src.notification_batcher, "_resolve_teams"
     ) as mock_resolve_teams:
 
-        mock_session_cls.return_value.__aenter__.return_value = mock_session
+        mock_batcher_session_cls.return_value.__aenter__.return_value = (
+            mock_session
+        )
+        mock_delivery_session_cls.return_value.__aenter__.return_value = (
+            mock_session
+        )
 
         match1 = MagicMock(id=1, scheduled_time=datetime.now(timezone.utc))
         match1.contest = MagicMock(image_url=None)

@@ -4,6 +4,8 @@ from discord.ext import commands
 from discord.utils import get
 
 from src.auth import is_admin
+from src.crud import set_live_message_async
+from src.db import get_async_session
 
 CATEGORY_NAME = "esports-pickem"
 CHANNEL_NAME = "pickem-announcements"
@@ -107,7 +109,25 @@ class AnnouncementModal(ui.Modal, title="Create Announcement"):
         embed.set_footer(text=announcement_details["label"])
 
         # Send the announcement immediately (preserve existing behavior/tests)
-        await channel.send(embed=embed)
+        # Also persist a live-message pointer for admin announcements
+        # so the bot can update or reference the admin announcement channel
+        # later.
+        # We use a dedicated scope_type so this does not conflict with the
+        # canonical per-game live message slots (upcoming/running/results).
+        new_msg = await channel.send(embed=embed)
+        try:
+            async with get_async_session() as session:
+                await set_live_message_async(
+                    session,
+                    getattr(guild, "id", 0),
+                    getattr(channel, "id", 0),
+                    getattr(new_msg, "id", 0),
+                    "announcement",
+                    None,
+                )
+        except Exception:
+            # Non-fatal: we do not require live message pointer during announce
+            pass
 
         # Send confirmation to the admin
         await interaction.followup.send(
