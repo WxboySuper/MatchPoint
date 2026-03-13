@@ -61,11 +61,9 @@ def normalize_enabled_games(
 ) -> list[str]:
     supported = set(get_supported_game_slugs())
     defaults = _get_default_supported_games(default_games, supported)
-    if not raw_games:
+    if raw_games is None:
         return defaults
-
-    normalized = _parse_supported_games(raw_games, supported)
-    return normalized or defaults
+    return _parse_supported_games(raw_games, supported)
 
 
 def format_enabled_games(raw_games: Optional[str]) -> str:

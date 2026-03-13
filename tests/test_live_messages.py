@@ -188,7 +188,8 @@ async def test_fetch_running_matches_excludes_finished_results():
             return self._rows
 
     class _AsyncSession:
-        async def exec(self, stmt):
+        @staticmethod
+        async def exec(stmt):
             with Session(engine) as session:
                 return _ResultWrapper(list(session.exec(stmt).all()))
 

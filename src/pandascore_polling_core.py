@@ -140,10 +140,19 @@ async def _persist_result(match: Match, winner: str, current_score_str: str):
         from src.db import get_async_session
 
         async with get_async_session() as session:
+            persisted_match = await session.get(Match, match.id)
+            if not persisted_match:
+                logger.error(
+                    "Match %s missing during result persistence", match.id
+                )
+                return None, False
+            persisted_match.status = "finished"
+            session.add(persisted_match)
             result = await match_result_utils.save_result_and_update_picks(
-                session, match, winner, current_score_str
+                session, persisted_match, winner, current_score_str
             )
             await session.commit()
+            match.status = "finished"
             try:
                 setattr(session, "_committed", True)
             except Exception:
@@ -194,7 +203,6 @@ async def _handle_winner(
 
     committed = False
     result = None
-    match.status = "finished"
     try:
         result, committed = await _persist_result(
             match, winner, current_score_str
@@ -517,42 +525,61 @@ async def _process_running_match(session, match_data: dict) -> bool:
 
 async def _handle_finished_pandascore_id(pandascore_id: int) -> None:
     try:
-        from src.db import get_async_session
+        match, game_slug = await _load_match_and_game_for_finished(
+            pandascore_id
+        )
+        if not match:
+            return
 
+        match_data = await _fetch_finished_match_data(pandascore_id, game_slug)
+        if not match_data or match_data.get("status") != "finished":
+            return
+
+        await _persist_finished_match_processing(pandascore_id, match_data)
+    except Exception:
+        logger.exception("Error fetching finished match %s", pandascore_id)
+
+
+async def _load_match_and_game_for_finished(
+    pandascore_id: int,
+) -> tuple[Optional[Match], str]:
+    from src.db import get_async_session
+
+    async with get_async_session() as session:
+        match = await crud.get_match_by_pandascore_id(session, pandascore_id)
+        if not match:
+            return None, "lol"
+        return match, getattr(match, "game", None) or "lol"
+
+
+async def _fetch_finished_match_data(
+    pandascore_id: int, game_slug: str
+) -> Optional[dict]:
+    return await pandascore_client.fetch_match_by_id(
+        pandascore_id, game=game_slug
+    )
+
+
+async def _persist_finished_match_processing(
+    pandascore_id: int, match_data: dict
+) -> None:
+    from src.db import get_async_session
+
+    try:
         async with get_async_session() as session:
             match = await crud.get_match_by_pandascore_id(
                 session, pandascore_id
             )
             if not match:
                 return
-            game_slug = getattr(match, "game", None) or "lol"
 
-        match_data = await pandascore_client.fetch_match_by_id(
-            pandascore_id, game=game_slug
-        )
-        if not match_data or match_data.get("status") != "finished":
-            return
-
-        try:
-            async with get_async_session() as session:
-                match = await crud.get_match_by_pandascore_id(
-                    session, pandascore_id
+            stmt = select(Result).where(Result.match_id == match.id)
+            res = await session.exec(stmt)
+            if not res.first():
+                committed = await _process_pandascore_match_data(
+                    session, match, match_data, f"poll_match_{match.id}"
                 )
-                if not match:
-                    return
-
-                # Check if result exists without triggering lazy load
-                stmt = select(Result).where(Result.match_id == match.id)
-                res = await session.exec(stmt)
-                if not res.first():
-                    committed = await _process_pandascore_match_data(
-                        session, match, match_data, f"poll_match_{match.id}"
-                    )
-                    if not committed:
-                        await session.commit()
-        except Exception:
-            logger.exception(
-                "Error processing finished match %s", pandascore_id
-            )
+                if not committed:
+                    await session.commit()
     except Exception:
-        logger.exception("Error fetching finished match %s", pandascore_id)
+        logger.exception("Error processing finished match %s", pandascore_id)

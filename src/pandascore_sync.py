@@ -238,11 +238,13 @@ async def perform_pandascore_sync(
     matches_to_schedule: List[Any] = []
     notifications: List[Tuple[int, int]] = []
     time_changes: List[Tuple[Any, Any, Any]] = []
+    failed_games: List[str] = []
 
     for game_slug in _configured_sync_games(game):
         matches_data = await _fetch_matches_for_sync(league_ids, game_slug)
         if matches_data is None:
-            return None
+            failed_games.append(game_slug)
+            continue
         if not matches_data:
             logger.info("No %s matches found from PandaScore", game_slug)
             await _reconcile_finished_matches_for_game(game_slug)
@@ -275,6 +277,12 @@ async def perform_pandascore_sync(
         notifications,
         time_changes,
     )
+    if failed_games:
+        logger.error(
+            "PandaScore sync failed for games: %s",
+            ", ".join(failed_games),
+        )
+        return None
     return total_summary
 
 
@@ -367,7 +375,10 @@ async def fetch_and_update_match_result(
         if not match_data:
             return False
 
+        match.status = "finished"
+        db_session.add(match)
         if await _result_exists(db_session, match.id):
+            await db_session.commit()
             logger.info("Match %s already has a result", match.id)
             return True
 
@@ -376,8 +387,6 @@ async def fetch_and_update_match_result(
         if parser is None:
             logger.error("No parser available for '%s'", resolved_game)
             return False
-        match.status = "finished"
-        db_session.add(match)
         ctx = PandaScoreSyncContext(
             db_session=db_session,
             summary={"contests": 0, "matches": 0, "teams": 0},

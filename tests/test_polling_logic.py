@@ -6,6 +6,18 @@ from src.models import Match, Contest, Result
 from src.pandascore_polling import poll_live_match_job
 
 
+def _mock_poll_session(with_commit: bool = False):
+    session = MagicMock()
+    session.exec = AsyncMock()
+    result = MagicMock()
+    result.first.return_value = None
+    session.exec.return_value = result
+    if with_commit:
+        session.commit = AsyncMock()
+        session.flush = AsyncMock()
+    return session
+
+
 @pytest.mark.asyncio
 async def test_poll_live_match_job_mid_series_update():
     """
@@ -35,12 +47,7 @@ async def test_poll_live_match_job_mid_series_update():
         ],
         "winner_id": None,
     }
-    mock_session = MagicMock()
-    mock_session.commit = AsyncMock()
-    mock_session.exec = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.first.return_value = None
-    mock_session.exec.return_value = mock_result
+    mock_session = _mock_poll_session(with_commit=True)
 
     with patch(
         "src.pandascore_polling.get_async_session"
@@ -81,10 +88,6 @@ async def test_poll_live_match_job_mid_series_update():
 
 @pytest.mark.asyncio
 async def test_poll_live_match_job_final_result():
-    """
-    Tests that a final result is correctly announced when a series concludes.
-    """
-    # Arrange
     mock_match = Match(
         id=2,
         pandascore_id=456,
@@ -107,13 +110,8 @@ async def test_poll_live_match_job_final_result():
         ],
         "winner_id": 100,
     }
-    mock_session = MagicMock()
-    mock_session.commit = AsyncMock()
-    mock_session.flush = AsyncMock()
-    mock_session.exec = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.first.return_value = None
-    mock_session.exec.return_value = mock_result
+    mock_session = _mock_poll_session(with_commit=True)
+    mock_session.get = AsyncMock(return_value=mock_match)
 
     with patch(
         "src.pandascore_polling.get_async_session"
@@ -147,10 +145,8 @@ async def test_poll_live_match_job_final_result():
             mock_session
         )
 
-        # Act
         await poll_live_match_job(match_db_id=2)
 
-        # Assert
         mock_get_match.assert_awaited_once_with(mock_session, 2)
         mock_get_match_data.assert_awaited_once_with(456, game="cs2")
         mock_send_update.assert_not_called()
@@ -187,11 +183,7 @@ async def test_poll_live_match_job_no_score_change():
         ],
         "winner_id": None,
     }
-    mock_session = MagicMock()
-    mock_session.exec = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.first.return_value = None
-    mock_session.exec.return_value = mock_result
+    mock_session = _mock_poll_session()
 
     with patch(
         "src.pandascore_polling.get_async_session"

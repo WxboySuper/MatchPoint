@@ -198,8 +198,9 @@ def _extract_games_from_batch(data_list: List[Any]) -> set[str]:
     games = set()
     for item in data_list:
         match = item[0] if item else None
-        game = getattr(match, "game", None) or "lol"
-        games.add(game)
+        game = getattr(match, "game", None)
+        if game:
+            games.add(game)
     return games
 
 
