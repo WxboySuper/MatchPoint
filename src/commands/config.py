@@ -58,7 +58,9 @@ def _filter_supported_games(raw_games: Iterable[str]) -> list[str]:
     seen = set()
     for raw in raw_games:
         game = raw.strip().lower()
-        if not game or game in seen or game not in supported:
+        if not game or game in seen:
+            continue
+        if game not in supported:
             continue
         seen.add(game)
         normalized.append(game)
