@@ -7,6 +7,7 @@ final results. Replaces the Leaguepedia-based polling logic.
 
 import logging
 import inspect
+import asyncio
 
 from src.db import get_async_session
 from src.pandascore_client import pandascore_client
@@ -132,14 +133,18 @@ async def _fetch_running_matches():
 
         games = DEFAULT_GAMES or ["lol"]
         # Fetch running matches for each configured game concurrently
-        coros = [pandascore_client.fetch_running_matches(game=g) for g in games]
+        coros = [
+            pandascore_client.fetch_running_matches(game=g) for g in games
+        ]
         results = await asyncio.gather(*coros, return_exceptions=True)
 
         combined = []
         seen = set()
         for res in results:
             if isinstance(res, Exception):
-                logger.exception("Error fetching running matches for a game: %s", res)
+                logger.exception(
+                    "Error fetching running matches for a game: %s", res
+                )
                 continue
             for m in res:
                 mid = m.get("id")
