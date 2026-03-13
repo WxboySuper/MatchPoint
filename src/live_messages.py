@@ -46,6 +46,14 @@ class LiveMessageTarget:
     scope: LiveMessageScope
 
 
+@dataclass(frozen=True)
+class LiveEmbedSpec:
+    title_suffix: str
+    empty_description: str
+    formatter: object
+    color: discord.Color
+
+
 def normalize_enabled_games(
     raw_games: Optional[str],
     *,
@@ -389,10 +397,12 @@ def _build_upcoming_embed(
     return _build_scoped_embed(
         game,
         matches,
-        title_suffix="Upcoming Matches",
-        empty_description="No matches are scheduled in the next 5 days.",
-        formatter=_format_upcoming_line,
-        color=discord.Color.blue(),
+        LiveEmbedSpec(
+            title_suffix="Upcoming Matches",
+            empty_description="No matches are scheduled in the next 5 days.",
+            formatter=_format_upcoming_line,
+            color=discord.Color.blue(),
+        ),
     )
 
 
@@ -400,10 +410,12 @@ def _build_running_embed(game: str, matches: Sequence[Match]) -> discord.Embed:
     return _build_scoped_embed(
         game,
         matches,
-        title_suffix="Live Matches",
-        empty_description="No matches are currently live.",
-        formatter=_format_running_line,
-        color=discord.Color.orange(),
+        LiveEmbedSpec(
+            title_suffix="Live Matches",
+            empty_description="No matches are currently live.",
+            formatter=_format_running_line,
+            color=discord.Color.orange(),
+        ),
     )
 
 
@@ -413,28 +425,26 @@ def _build_results_embed(
     return _build_scoped_embed(
         game,
         results,
-        title_suffix="Recent Results",
-        empty_description="No recent results to show yet.",
-        formatter=_format_result_entry,
-        color=discord.Color.gold(),
+        LiveEmbedSpec(
+            title_suffix="Recent Results",
+            empty_description="No recent results to show yet.",
+            formatter=_format_result_entry,
+            color=discord.Color.gold(),
+        ),
     )
 
 
 def _build_scoped_embed(
     game: str,
     entries: Sequence,
-    *,
-    title_suffix: str,
-    empty_description: str,
-    formatter,
-    color: discord.Color,
+    spec: LiveEmbedSpec,
 ) -> discord.Embed:
-    title = f"{_game_display_name(game)} {title_suffix}"
+    title = f"{_game_display_name(game)} {spec.title_suffix}"
     if not entries:
-        description = empty_description
+        description = spec.empty_description
     else:
-        description = "\n\n".join(formatter(entry) for entry in entries)
-    return _build_live_embed(title, description, color)
+        description = "\n\n".join(spec.formatter(entry) for entry in entries)
+    return _build_live_embed(title, description, spec.color)
 
 
 def _build_live_embed(
