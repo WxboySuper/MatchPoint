@@ -9,6 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from src.auth import is_admin
+from src.live_messages import refresh_all_live_messages
 from src.pandascore_sync import perform_pandascore_sync
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,31 @@ class SyncMatches(commands.Cog):
             root_logger.removeHandler(handler)
             root_logger.setLevel(original_level)
             log_stream.close()
+
+    @app_commands.command(
+        name="refresh-live-messages",
+        description="Force a refresh of the canonical live messages.",
+    )
+    @is_admin()
+    async def refresh_live_messages(
+        self, interaction: discord.Interaction
+    ):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        try:
+            await refresh_all_live_messages()
+        except Exception:
+            logger.exception("Failed refreshing live messages manually.")
+            await interaction.followup.send(
+                "Live message refresh failed. Check logs for details.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.followup.send(
+            "Live messages refreshed.",
+            ephemeral=True,
+        )
 
 
 async def setup(bot: commands.Bot):
