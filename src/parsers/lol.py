@@ -88,6 +88,7 @@ class LoLParser(PandaScoreParser):
         return {
             "pandascore_id": pandascore_id,
             "contest_id": contest_id,
+            "game": ((match_data.get("videogame") or {}).get("slug") or "lol"),
             "team1": team1_name,
             "team2": team2_name,
             "team1_id": team1_info.get("id"),

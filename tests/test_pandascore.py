@@ -157,11 +157,24 @@ class TestLoLParser:
         result = parser.extract_match_data(match_data, contest_id=1)
         assert result is not None
         assert result["pandascore_id"] == 123456
+        assert result["game"] == "lol"
         assert result["team1"] == "Team A"
         assert result["team2"] == "Team B"
         assert result["team1_id"] == 100
         assert result["team2_id"] == 200
         assert result["best_of"] == 3
+
+    def test_extract_match_data_uses_payload_game_slug(self, parser):
+        match_data = {
+            "id": 123456,
+            "scheduled_at": "2024-03-15T10:00:00Z",
+            "opponents": [],
+            "videogame": {"slug": "cs2"},
+        }
+
+        result = parser.extract_match_data(match_data, contest_id=1)
+        assert result is not None
+        assert result["game"] == "cs2"
 
     def test_extract_match_data_missing_opponents(self, parser):
         """Test extracting match data with fewer than 2 opponents."""
@@ -249,6 +262,30 @@ class TestPandaScorePollingHelpers:
             match_data, match, team1_score, team2_score
         )
         assert winner == expected
+
+
+class TestCS2Parser:
+    @pytest.fixture
+    def parser(self):
+        from src.parsers.cs2 import CS2Parser
+
+        return CS2Parser()
+
+    def test_extract_match_data_sets_cs2_game(self, parser):
+        match_data = {
+            "id": 987654,
+            "scheduled_at": "2024-03-15T10:00:00Z",
+            "number_of_games": 3,
+            "status": "not_started",
+            "opponents": [
+                {"opponent": {"id": 100, "name": "Team A"}},
+                {"opponent": {"id": 200, "name": "Team B"}},
+            ],
+        }
+
+        result = parser.extract_match_data(match_data, contest_id=1)
+        assert result is not None
+        assert result["game"] == "cs2"
 
 
 class TestPandaScoreSyncIntegration:

@@ -53,6 +53,8 @@ class SyncMatches(commands.Cog):
 
         try:
             summary = await perform_pandascore_sync()
+            if summary is not None:
+                await refresh_all_live_messages()
 
             # Retrieve the logs
             log_contents = log_stream.getvalue()
@@ -95,9 +97,7 @@ class SyncMatches(commands.Cog):
         description="Force a refresh of the canonical live messages.",
     )
     @is_admin()
-    async def refresh_live_messages(
-        self, interaction: discord.Interaction
-    ):
+    async def refresh_live_messages(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
 
         try:
