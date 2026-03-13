@@ -59,8 +59,17 @@ async def test_batch_reminders():
             contest_id=1,
         )
         match2.contest = contest
+        match3 = Match(
+            id=3,
+            team1="Team E",
+            team2="Team F",
+            scheduled_time=now,
+            contest_id=1,
+            game="cs2",
+        )
+        match3.contest = MagicMock(image_url=None)
 
-        mock_bulk_matches.return_value = [match1, match2]
+        mock_bulk_matches.return_value = [match1, match2, match3]
         mock_bulk_teams.return_value = {}  # Mock dict
         mock_resolve_teams.return_value = (None, None)
 
@@ -71,7 +80,7 @@ async def test_batch_reminders():
         assert len(batcher._pending["reminder_5"]) == 2
         await asyncio.sleep(1.1)
 
-        mock_refresh.assert_awaited_once_with({"lol"})
+        mock_refresh.assert_awaited_once_with({"lol", "cs2"})
 
 
 @pytest.mark.asyncio
@@ -180,8 +189,14 @@ async def test_explicit_batching_mode():
             game="lol",
         )
         match2.contest = MagicMock(image_url=None)
+        match3 = MagicMock(
+            id=3,
+            scheduled_time=datetime.now(timezone.utc),
+            game="cs2",
+        )
+        match3.contest = MagicMock(image_url=None)
 
-        mock_bulk_matches.return_value = [match1, match2]
+        mock_bulk_matches.return_value = [match1, match2, match3]
         mock_bulk_teams.return_value = {}
         mock_resolve_teams.return_value = (None, None)
 
@@ -192,5 +207,5 @@ async def test_explicit_batching_mode():
             assert len(batcher._pending["reminder_5"]) == 1
             await batcher.add_reminder(2, 5)
 
-        mock_refresh.assert_awaited_once_with({"lol"})
+        mock_refresh.assert_awaited_once_with({"lol", "cs2"})
         assert len(batcher._pending["reminder_5"]) == 0

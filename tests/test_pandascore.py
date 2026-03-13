@@ -264,9 +264,8 @@ class TestPandaScoreSyncIntegration:
             new_callable=AsyncMock,
             return_value=[],
         ), patch(
-            "src.pandascore_sync.pandascore_client.fetch_running_matches",
+            "src.pandascore_sync._reconcile_finished_matches_for_game",
             new_callable=AsyncMock,
-            return_value=[],
         ):
             result = await perform_pandascore_sync()
             assert result is not None
@@ -283,9 +282,74 @@ class TestPandaScoreSyncIntegration:
             "src.pandascore_sync.pandascore_client.fetch_matches",
             new_callable=AsyncMock,
             side_effect=Exception("API Error"),
+        ), patch(
+            "src.pandascore_sync._reconcile_finished_matches_for_game",
+            new_callable=AsyncMock,
         ):
             result = await perform_pandascore_sync()
             assert result is None
+
+    @pytest.mark.asyncio
+    async def test_perform_pandascore_sync_fetches_all_configured_games(self):
+        from src.pandascore_sync import perform_pandascore_sync
+
+        async def _fetch_matches(kind, options=None, game="lol"):
+            _ = options
+            if kind == "running":
+                return []
+            if kind == "recent_past":
+                return []
+            return [
+                {
+                    "id": 100 if game == "lol" else 200,
+                    "scheduled_at": "2024-03-15T10:00:00Z",
+                    "number_of_games": 3,
+                    "status": "not_started",
+                    "league": {"id": 1, "name": "League"},
+                    "serie": {
+                        "id": 10,
+                        "name": "Split",
+                        "full_name": "Split",
+                    },
+                    "opponents": [
+                        {
+                            "opponent": {
+                                "id": 1,
+                                "name": f"{game} A",
+                            }
+                        },
+                        {
+                            "opponent": {
+                                "id": 2,
+                                "name": f"{game} B",
+                            }
+                        },
+                    ],
+                    "videogame": {"slug": game},
+                }
+            ]
+
+        with patch(
+            "src.pandascore_sync.pandascore_client.fetch_matches",
+            new_callable=AsyncMock,
+            side_effect=_fetch_matches,
+        ) as mock_fetch, patch(
+            "src.pandascore_sync._run_post_sync_actions",
+            new_callable=AsyncMock,
+        ), patch(
+            "src.pandascore_sync._reconcile_finished_matches_for_game",
+            new_callable=AsyncMock,
+        ), patch(
+            "src.config.DEFAULT_GAMES",
+            ["lol", "cs2"],
+        ):
+            result = await perform_pandascore_sync()
+
+        requested_games = {
+            call.kwargs["game"] for call in mock_fetch.await_args_list
+        }
+        assert requested_games == {"lol", "cs2"}
+        assert result is not None
 
 
 class TestPandaScoreClientRateLimiting:

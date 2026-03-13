@@ -1,9 +1,12 @@
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
+from sqlmodel import SQLModel, Session, create_engine
 
 import src.live_messages as live_messages
+from src.models import Contest, Match, Result
 
 
 @pytest.mark.asyncio
@@ -125,3 +128,83 @@ def test_build_running_embed_keeps_empty_state_message():
 
     assert embed.title == "LoL Live Matches"
     assert embed.description == "No matches are currently live."
+
+
+@pytest.mark.asyncio
+async def test_fetch_running_matches_excludes_finished_results():
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        contest = Contest(
+            pandascore_league_id=1,
+            pandascore_serie_id=2,
+            name="LCS Spring",
+            start_date=datetime.now(timezone.utc),
+            end_date=datetime.now(timezone.utc),
+        )
+        session.add(contest)
+        session.commit()
+        session.refresh(contest)
+
+        running_match = Match(
+            contest_id=contest.id,
+            pandascore_id=1,
+            team1="A",
+            team2="B",
+            status="running",
+            game="lol",
+            scheduled_time=datetime.now(timezone.utc),
+        )
+        stale_match = Match(
+            contest_id=contest.id,
+            pandascore_id=2,
+            team1="C",
+            team2="D",
+            status="running",
+            game="lol",
+            scheduled_time=datetime.now(timezone.utc),
+        )
+        session.add(running_match)
+        session.add(stale_match)
+        session.commit()
+        session.refresh(running_match)
+        session.refresh(stale_match)
+
+        session.add(
+            Result(
+                match_id=stale_match.id,
+                winner="C",
+                score="2-0",
+            )
+        )
+        session.commit()
+
+    class _ResultWrapper:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return self._rows
+
+    class _AsyncSession:
+        @staticmethod
+        async def exec(stmt):
+            with Session(engine) as session:
+                return _ResultWrapper(list(session.exec(stmt).all()))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            _ = (exc_type, exc, tb)
+            return False
+
+    with patch.object(
+        live_messages,
+        "get_async_session",
+        return_value=_AsyncSession(),
+    ):
+        matches = await live_messages._fetch_running_matches("lol")
+
+    assert [match.pandascore_id for match in matches] == [1]
