@@ -2,7 +2,6 @@ import logging
 from datetime import datetime
 from src.models import Match
 from src.notification_batcher import batcher
-from src.crud import get_live_message
 
 logger = logging.getLogger(__name__)
 

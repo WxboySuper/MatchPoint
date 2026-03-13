@@ -6,7 +6,7 @@ from typing import Optional
 import discord
 
 from src.bot_instance import get_bot_instance
-from src.crud import get_guild_config, get_live_message, set_live_message
+from src.crud import get_guild_config
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +181,9 @@ async def get_announcement_channel(
         with get_session() as session:
             cfg = get_guild_config(session, getattr(guild, "id", None))
             if cfg and cfg.announcement_channel_id:
-                ch = discord.utils.get(guild.text_channels, id=cfg.announcement_channel_id)
+                ch = discord.utils.get(
+                    guild.text_channels, id=cfg.announcement_channel_id
+                )
                 if ch and _can_send(ch, _get_bot_member(guild)):
                     return ch
     except Exception:
