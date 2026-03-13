@@ -136,8 +136,7 @@ is in `dev-requirements.txt` and is configured in tests.
   - `src/crud/` (all files)
   - `tests/` (for examples of usage and fixtures)
 
-If you want, I can also:
-1. Add pre-commit hooks configuration (e.g. `pre-commit` with black/flake8).
-2. Create a CONTRIBUTING.md checklist for reviewers.
+Consider adding pre-commit hooks (for example, `pre-commit` with
+`black`/`flake8`) and a `CONTRIBUTING.md` checklist for reviewers.
 
 End of file.

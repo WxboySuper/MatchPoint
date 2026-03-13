@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone
 
 import src.notification_batcher as nb
+import src.notification_delivery as delivery
 from src.notification_batcher import NotificationBatcher
 from src.models import Match, Contest
 
@@ -56,27 +57,36 @@ async def test_scoped_live_message_editing_and_creation():
 
     with patch.object(
         nb, "get_bot_instance", return_value=mock_bot
-    ), patch.object(nb, "get_async_session") as mock_session_cls, patch.object(
+    ), patch.object(
+        nb, "get_async_session"
+    ) as mock_batcher_session_cls, patch.object(
+        delivery, "get_async_session"
+    ) as mock_delivery_session_cls, patch.object(
         nb, "_bulk_fetch_matches", new_callable=AsyncMock
     ) as mock_bulk_matches, patch.object(
         nb, "_bulk_fetch_teams", new_callable=AsyncMock
     ) as mock_bulk_teams, patch.object(
         nb, "_resolve_teams"
     ) as mock_resolve_teams, patch.object(
-        nb, "set_live_message_async", new_callable=AsyncMock
+        delivery, "set_live_message_async", new_callable=AsyncMock
     ) as mock_set_live_message, patch.object(
-        nb,
+        delivery,
         "get_guild_config_async",
         new_callable=AsyncMock,
         return_value=cfg_obj,
     ), patch.object(
-        nb,
+        delivery,
         "get_live_message_async",
         new_callable=AsyncMock,
         return_value=None,
     ):
 
-        mock_session_cls.return_value.__aenter__.return_value = mock_session
+        mock_batcher_session_cls.return_value.__aenter__.return_value = (
+            mock_session
+        )
+        mock_delivery_session_cls.return_value.__aenter__.return_value = (
+            mock_session
+        )
         mock_bulk_matches.return_value = [match]
         mock_bulk_teams.return_value = {}
         mock_resolve_teams.return_value = (None, None)
@@ -136,20 +146,24 @@ async def test_mid_series_updates_edit_existing_message():
 
     with patch.object(
         nb, "get_bot_instance", return_value=mock_bot
-    ), patch.object(nb, "get_async_session") as mock_session_cls, patch.object(
+    ), patch.object(
+        nb, "get_async_session"
+    ) as mock_batcher_session_cls, patch.object(
+        delivery, "get_async_session"
+    ) as mock_delivery_session_cls, patch.object(
         nb, "_bulk_fetch_matches", new_callable=AsyncMock
     ) as mock_bulk_matches, patch.object(
         nb, "_bulk_fetch_teams", new_callable=AsyncMock
     ) as mock_bulk_teams, patch.object(
         nb, "_resolve_teams"
     ) as mock_resolve_teams, patch.object(
-        nb, "get_live_message_async", new_callable=AsyncMock
+        delivery, "get_live_message_async", new_callable=AsyncMock
     ) as mock_get_live, patch.object(
-        nb, "set_live_message_async", new_callable=AsyncMock
+        delivery, "set_live_message_async", new_callable=AsyncMock
     ) as mock_set_live:
         # Provide a guild config so per-guild channel resolution works in tests
         with patch.object(
-            nb,
+            delivery,
             "get_guild_config_async",
             new_callable=AsyncMock,
             return_value=MagicMock(
@@ -158,7 +172,10 @@ async def test_mid_series_updates_edit_existing_message():
             ),
         ):
 
-            mock_session_cls.return_value.__aenter__.return_value = (
+            mock_batcher_session_cls.return_value.__aenter__.return_value = (
+                mock_session
+            )
+            mock_delivery_session_cls.return_value.__aenter__.return_value = (
                 mock_session
             )
             mock_bulk_matches.return_value = [match]

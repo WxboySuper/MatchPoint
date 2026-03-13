@@ -179,11 +179,16 @@ def _merge_running_match_results(results):
             )
             continue
         for match_data in result:
-            match_id = match_data.get("id")
-            if match_id and match_id not in seen:
-                seen.add(match_id)
-                combined.append(match_data)
+            _append_running_match(combined, seen, match_data)
     return combined
+
+
+def _append_running_match(combined, seen, match_data) -> None:
+    match_id = match_data.get("id")
+    if not match_id or match_id in seen:
+        return
+    seen.add(match_id)
+    combined.append(match_data)
 
 
 async def _commit_if_needed(session, any_committed: bool) -> None:

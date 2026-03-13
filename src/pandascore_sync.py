@@ -5,9 +5,9 @@ Provides functions to sync matches, teams, and contests from the
 PandaScore API into the local database.
 """
 
-import logging
 import asyncio
-from typing import Optional, List, Dict, Any, Tuple, Callable, Awaitable
+import logging
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from sqlmodel import select
 from src.models import Result
@@ -148,7 +148,7 @@ async def _fetch_matches_for_sync(
 
 
 async def _process_matches_and_commit(
-    matches_data: List[Any], db_session
+    matches_data: List[Any], db_session, game: str
 ) -> Tuple[
     List[Any],
     List[Tuple[int, int]],
@@ -160,21 +160,9 @@ async def _process_matches_and_commit(
     and summary.
     """
     summary = {"contests": 0, "matches": 0, "teams": 0}
-    # Resolve parser for this sync run. The caller may pass a game_slug
-    # to select which parser to use; default to LoL for backward
-    # compatibility.
-    # Note: the function signature was intentionally kept small; callers
-    # will provide a 'game' attribute on the db_session via closure or
-    # pass a parser directly if desired. For simplicity, the calling
-    # perform_pandascore_sync passes the desired game here via the
-    # 'db_session' context and local variable.
-    # To keep changes minimal, expect callers to set `game_for_run` in
-    # the outer scope and use it here by closing over it. If absent,
-    # default to 'lol'.
-    game_for_run = getattr(db_session, "_sync_game", None) or "lol"
-    parser = get_parser(game_for_run)
+    parser = get_parser(game)
     if parser is None:
-        logger.error("No parser available for '%s'", game_for_run)
+        logger.error("No parser available for '%s'", game)
         return ([], [], [], summary)
 
     ctx = PandaScoreSyncContext(
@@ -230,22 +218,22 @@ async def perform_pandascore_sync(
     logger.info(
         "Fetched total of %d matches from PandaScore", len(matches_data)
     )
+    if game:
+        game_slug = game
+    else:
+        from src.config import DEFAULT_GAMES
+
+        game_slug = DEFAULT_GAMES[0] if DEFAULT_GAMES else "lol"
 
     async with get_async_session() as db_session:
-        # Attach desired game to the session object so lower-level helpers
-        # can pick it up when needed (lightweight pragmatic approach).
-        try:
-            setattr(db_session, "_sync_game", game or None)
-        except Exception:
-            # Non-fatal: if we cannot attach, parser selection falls back
-            # to defaults in _process_matches_and_commit.
-            pass
         (
             all_matches_to_schedule,
             all_notifications,
             all_time_changes,
             summary,
-        ) = await _process_matches_and_commit(matches_data, db_session)
+        ) = await _process_matches_and_commit(
+            matches_data, db_session, game_slug
+        )
 
     await _run_post_sync_actions(
         all_matches_to_schedule, all_notifications, all_time_changes
@@ -308,6 +296,19 @@ async def sync_running_matches() -> Dict[str, Any]:
     return {"started": started, "finished": finished}
 
 
+def _resolve_match_game(match, match_data: Dict[str, Any]) -> str:
+    if getattr(match, "game", None):
+        return match.game
+
+    videogame = match_data.get("videogame") or {}
+    if videogame.get("slug"):
+        return videogame["slug"]
+
+    from src.config import DEFAULT_GAMES
+
+    return DEFAULT_GAMES[0] if DEFAULT_GAMES else "lol"
+
+
 async def fetch_and_update_match_result(pandascore_id: int) -> bool:
     """
     Fetch result for a specific match and update the database.
@@ -333,9 +334,10 @@ async def fetch_and_update_match_result(pandascore_id: int) -> bool:
             logger.info("Match %s already has a result", match.id)
             return True
 
-        parser = get_parser("lol")
+        game_slug = _resolve_match_game(match, match_data)
+        parser = get_parser(game_slug)
         if parser is None:
-            logger.error("No parser available for 'lol'")
+            logger.error("No parser available for '%s'", game_slug)
             return False
         ctx = PandaScoreSyncContext(
             db_session=db_session,

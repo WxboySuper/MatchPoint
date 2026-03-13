@@ -13,7 +13,7 @@ PANDASCORE_API_KEY = os.getenv("PANDASCORE_API_KEY")
 
 # Default games to sync/poll when no per-guild configuration is present.
 # Comma-separated env var supported (e.g. "lol,cs2").
-def _parse_default_games(env_val: str | None):
+def _parse_default_games(env_val: str | None) -> list[str]:
     if not env_val:
         return ["lol"]
     parts = [p.strip() for p in env_val.split(",") if p.strip()]

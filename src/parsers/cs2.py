@@ -5,7 +5,8 @@ PandaScore payloads and the same contract used by the LoL parser.
 """
 
 import logging
-from typing import Optional, Dict, Any, Tuple
+from datetime import datetime, timezone
+from typing import Any, Optional
 
 from src.parsers.base import PandaScoreParser
 
@@ -24,8 +25,8 @@ class CS2Parser(PandaScoreParser):
 
     @staticmethod
     def extract_team_data(
-        opponent: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
+        opponent: dict[str, Any],
+    ) -> Optional[dict[str, Any]]:
         team_info = opponent.get("opponent")
         if not team_info:
             return None
@@ -38,7 +39,7 @@ class CS2Parser(PandaScoreParser):
         }
 
     @staticmethod
-    def extract_contest_data(match_data: Dict[str, Any]) -> Dict[str, Any]:
+    def extract_contest_data(match_data: dict[str, Any]) -> dict[str, Any]:
         league = match_data.get("league", {})
         serie = match_data.get("serie", {})
 
@@ -50,12 +51,10 @@ class CS2Parser(PandaScoreParser):
             match_data.get("scheduled_at")
         )
         now = (
-            PandaScoreParser.parse_date(match_data.get("scheduled_at")) or None
+            scheduled_at
+            if scheduled_at is not None
+            else datetime.now(timezone.utc)
         )
-        if now is None:
-            from datetime import datetime, timezone
-
-            now = datetime.now(timezone.utc)
 
         return {
             "pandascore_league_id": league.get("id"),
@@ -68,8 +67,8 @@ class CS2Parser(PandaScoreParser):
 
     @staticmethod
     def extract_match_data(
-        match_data: Dict[str, Any], contest_id: int
-    ) -> Optional[Dict[str, Any]]:
+        match_data: dict[str, Any], contest_id: int
+    ) -> Optional[dict[str, Any]]:
         pandascore_id = match_data.get("id")
         scheduled_at = PandaScoreParser.parse_date(
             match_data.get("scheduled_at")
@@ -111,8 +110,8 @@ class CS2Parser(PandaScoreParser):
 
     @staticmethod
     def extract_winner_and_scores(
-        match_data: Dict[str, Any], match: Any, winner_id: Any
-    ) -> Tuple[Optional[str], int, int]:
+        match_data: dict[str, Any], match: Any, winner_id: Any
+    ) -> tuple[Optional[str], int, int]:
         # PandaScore for CS often uses results with team_id and score fields
         results = match_data.get("results") or []
         scores = {

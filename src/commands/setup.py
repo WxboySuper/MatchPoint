@@ -6,8 +6,8 @@ from discord import app_commands
 from discord.ext import commands
 
 from src.auth import is_admin
-from src.db import get_session
-from src.crud import upsert_guild_config
+from src.crud import upsert_guild_config_async
+from src.db import get_async_session
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +26,20 @@ async def cmd_setup(
     This command is intended for server owners or admins.
     """
     # Permission check: allow guild owner or configured admin list
-    if not (
-        interaction.user.guild_permissions.manage_guild
-        or interaction.user == interaction.guild.owner
-    ):
+    if not interaction.guild:
+        await interaction.response.send_message(
+            "This command must be run in a server.", ephemeral=True
+        )
+        return
+
+    can_manage = bool(
+        getattr(interaction.user, "guild_permissions", None)
+        and interaction.user.guild_permissions.manage_guild
+    )
+    if not (can_manage or interaction.user == interaction.guild.owner):
         # Try environment admin fallback
         try:
-            if not is_admin().predicate(interaction):
+            if not await is_admin().predicate(interaction):
                 await interaction.response.send_message(
                     "You do not have permission to run setup.", ephemeral=True
                 )
@@ -46,17 +53,12 @@ async def cmd_setup(
     await interaction.response.defer(ephemeral=True)
     _ = enable_auto_channel_creation
 
-    guild_id = interaction.guild.id if interaction.guild else None
-    if guild_id is None:
-        await interaction.followup.send(
-            "This command must be run in a server.", ephemeral=True
-        )
-        return
+    guild_id = interaction.guild.id
 
     # Persist configuration
     try:
-        with get_session() as session:
-            upsert_guild_config(
+        async with get_async_session() as session:
+            await upsert_guild_config_async(
                 session,
                 guild_id,
                 announcement_channel_id=getattr(
@@ -78,13 +80,7 @@ async def cmd_setup(
 
 
 async def setup_cog(bot: commands.Bot):
-    bot.tree.add_command(
-        app_commands.Command(
-            name="setup",
-            description="Initial server setup for MatchPoint bot",
-            callback=cmd_setup,
-        )
-    )
+    bot.tree.add_command(cmd_setup)
 
 
 async def setup(bot: commands.Bot):

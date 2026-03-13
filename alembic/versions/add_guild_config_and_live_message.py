@@ -60,15 +60,47 @@ def upgrade():
             sa.Column("scope_key", sa.String(), nullable=True),
             sa.Column("last_rendered_at", sa.String(), nullable=True),
         )
+        op.create_index(
+            "ix_liveupdatemessage_guild_id",
+            "liveupdatemessage",
+            ["guild_id"],
+            unique=False,
+        )
+        op.create_index(
+            "ix_liveupdatemessage_channel_id",
+            "liveupdatemessage",
+            ["channel_id"],
+            unique=False,
+        )
+        op.create_index(
+            "ix_liveupdatemessage_message_id",
+            "liveupdatemessage",
+            ["message_id"],
+            unique=False,
+        )
 
 
 def downgrade():
     conn = op.get_bind()
     inspector = sa.inspect(conn)
     if "liveupdatemessage" in inspector.get_table_names():
+        live_indexes = {
+            index["name"]
+            for index in inspector.get_indexes("liveupdatemessage")
+        }
+        for index_name in (
+            "ix_liveupdatemessage_guild_id",
+            "ix_liveupdatemessage_channel_id",
+            "ix_liveupdatemessage_message_id",
+        ):
+            if index_name in live_indexes:
+                op.drop_index(index_name, table_name="liveupdatemessage")
         op.drop_table("liveupdatemessage")
     if "guildconfig" in inspector.get_table_names():
-        op.drop_index(
-            op.f("ix_guildconfig_guild_id"), table_name="guildconfig"
-        )
+        guild_indexes = {
+            index["name"] for index in inspector.get_indexes("guildconfig")
+        }
+        guild_index_name = op.f("ix_guildconfig_guild_id")
+        if guild_index_name in guild_indexes:
+            op.drop_index(guild_index_name, table_name="guildconfig")
         op.drop_table("guildconfig")

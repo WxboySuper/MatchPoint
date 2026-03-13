@@ -14,8 +14,8 @@ from discord import app_commands
 from discord.ext import commands
 
 from src.auth import is_admin
-from src.db import get_session
-from src.crud import get_guild_config, upsert_guild_config
+from src.crud import get_guild_config_async, upsert_guild_config_async
+from src.db import get_async_session
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +35,8 @@ async def view(interaction: discord.Interaction):
         )
         return
 
-    with get_session() as session:
-        cfg = get_guild_config(session, interaction.guild.id)
+    async with get_async_session() as session:
+        cfg = await get_guild_config_async(session, interaction.guild.id)
         if not cfg:
             await interaction.response.send_message(
                 "No configuration found for this guild.", ephemeral=True
@@ -71,6 +71,11 @@ async def _has_config_permission(interaction: discord.Interaction) -> bool:
             return True
     except Exception:
         # Be conservative and fall through to admin check
+        logger.exception(
+            "Local guild permission check failed for user %s in guild %s",
+            getattr(interaction.user, "id", None),
+            getattr(interaction.guild, "id", None),
+        )
         pass
 
     # Fallback to global admin list
@@ -80,6 +85,11 @@ async def _has_config_permission(interaction: discord.Interaction) -> bool:
             return True
     except Exception:
         # treat any error as not permitted
+        logger.exception(
+            "Admin fallback permission check failed for user %s in guild %s",
+            getattr(interaction.user, "id", None),
+            getattr(interaction.guild, "id", None),
+        )
         pass
 
     await interaction.response.send_message(
@@ -88,13 +98,13 @@ async def _has_config_permission(interaction: discord.Interaction) -> bool:
     return False
 
 
-def _update_guild_channel(guild_id: int, field: str, value: int) -> None:
+async def _update_guild_channel(guild_id: int, field: str, value: int) -> None:
     """Update a single channel field for the guild config.
 
     This wraps the DB session and upsert call used by set_channel.
     """
-    with get_session() as session:
-        upsert_guild_config(session, guild_id, **{field: value})
+    async with get_async_session() as session:
+        await upsert_guild_config_async(session, guild_id, **{field: value})
 
 
 @config_group.command(
@@ -131,7 +141,7 @@ async def set_channel(
         return
 
     try:
-        _update_guild_channel(guild_id, field, channel.id)
+        await _update_guild_channel(guild_id, field, channel.id)
         await interaction.followup.send(
             "Configuration updated.", ephemeral=True
         )
@@ -148,23 +158,8 @@ async def set_channel(
 )
 async def set_games(interaction: discord.Interaction, games: str):
     # Permission check (same as other commands)
-    if not (
-        interaction.user.guild_permissions.manage_guild
-        or interaction.user == interaction.guild.owner
-    ):
-        try:
-            if not is_admin().predicate(interaction):
-                await interaction.response.send_message(
-                    "You do not have permission to run this command.",
-                    ephemeral=True,
-                )
-                return
-        except Exception:
-            await interaction.response.send_message(
-                "You do not have permission to run this command.",
-                ephemeral=True,
-            )
-            return
+    if not await _has_config_permission(interaction):
+        return
 
     await interaction.response.defer(ephemeral=True)
     guild_id = interaction.guild.id if interaction.guild else None
@@ -178,8 +173,10 @@ async def set_games(interaction: discord.Interaction, games: str):
         [g.strip().lower() for g in games.split(",") if g.strip()]
     )
     try:
-        with get_session() as session:
-            upsert_guild_config(session, guild_id, enabled_games=normalized)
+        async with get_async_session() as session:
+            await upsert_guild_config_async(
+                session, guild_id, enabled_games=normalized
+            )
         await interaction.followup.send(
             f"Enabled games set to: {normalized}", ephemeral=True
         )

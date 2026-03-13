@@ -6,7 +6,8 @@ from typing import Optional
 import discord
 
 from src.bot_instance import get_bot_instance
-from src.crud import get_guild_config
+from src.crud import get_guild_config_async
+from src.db import get_async_session
 
 logger = logging.getLogger(__name__)
 
@@ -175,11 +176,10 @@ async def get_announcement_channel(
     """
     # 1) If a GuildConfig exists, prefer the configured announcement channel
     try:
-        # Synchronous path: many command handlers call this from sync context
-        from src.db import get_session
-
-        with get_session() as session:
-            cfg = get_guild_config(session, getattr(guild, "id", None))
+        async with get_async_session() as session:
+            cfg = await get_guild_config_async(
+                session, getattr(guild, "id", None)
+            )
             if cfg and cfg.announcement_channel_id:
                 ch = discord.utils.get(
                     guild.text_channels, id=cfg.announcement_channel_id
@@ -188,7 +188,9 @@ async def get_announcement_channel(
                     return ch
     except Exception:
         # Fall back to existing discovery logic
-        logger.debug("Guild config lookup failed; falling back to discovery")
+        logger.exception(
+            "Guild config lookup failed; falling back to discovery"
+        )
 
     if existing := _find_existing_channel(guild):
         return existing

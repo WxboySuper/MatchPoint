@@ -137,18 +137,13 @@ def set_live_message(
     session,
     *args: Union[int, LiveMessageTarget],
     payload: Optional[LiveMessagePayload] = None,
-    scope_type: Optional[str] = None,
-    scope_key: Optional[str] = None,
 ) -> LiveUpdateMessage:
     """Persist a live message using either target or legacy arguments."""
     target, legacy_scope = _normalize_target(args)
     normalized_payload = _normalize_payload(
         payload=payload,
         legacy_scope=legacy_scope,
-        scope_key=scope_key,
     )
-    if scope_type is not None and payload is None:
-        normalized_payload.scope_type = scope_type
 
     rec = get_live_message(
         session,
@@ -167,8 +162,13 @@ def set_live_message(
     return rec
 
 
-def delete_live_message(session, guild_id: int) -> None:
-    rec = get_live_message(session, guild_id)
+def delete_live_message(
+    session,
+    guild_id: int,
+    scope_type: Optional[str] = None,
+    scope_key: Optional[str] = None,
+) -> None:
+    rec = get_live_message(session, guild_id, scope_type, scope_key)
     if rec:
         session.delete(rec)
         session.commit()
@@ -196,18 +196,13 @@ async def set_live_message_async(
     session: AsyncSession,
     *args: Union[int, LiveMessageTarget],
     payload: Optional[LiveMessagePayload] = None,
-    scope_type: Optional[str] = None,
-    scope_key: Optional[str] = None,
 ) -> LiveUpdateMessage:
     """Async persist helper supporting typed and legacy arguments."""
     target, legacy_scope = _normalize_target(args)
     normalized_payload = _normalize_payload(
         payload=payload,
         legacy_scope=legacy_scope,
-        scope_key=scope_key,
     )
-    if scope_type is not None and payload is None:
-        normalized_payload.scope_type = scope_type
 
     rec = await get_live_message_async(
         session,
@@ -230,9 +225,14 @@ async def set_live_message_async(
 
 
 async def delete_live_message_async(
-    session: AsyncSession, guild_id: int
+    session: AsyncSession,
+    guild_id: int,
+    scope_type: Optional[str] = None,
+    scope_key: Optional[str] = None,
 ) -> None:
-    rec = await get_live_message_async(session, guild_id)
+    rec = await get_live_message_async(
+        session, guild_id, scope_type=scope_type, scope_key=scope_key
+    )
     if rec:
         await session.delete(rec)
         await session.commit()

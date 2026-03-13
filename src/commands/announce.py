@@ -4,6 +4,8 @@ from discord.ext import commands
 from discord.utils import get
 
 from src.auth import is_admin
+from src.crud import set_live_message_async
+from src.db import get_async_session
 
 CATEGORY_NAME = "esports-pickem"
 CHANNEL_NAME = "pickem-announcements"
@@ -114,19 +116,14 @@ class AnnouncementModal(ui.Modal, title="Create Announcement"):
         # canonical per-game live message slots (upcoming/running/results).
         new_msg = await channel.send(embed=embed)
         try:
-            from src.db import get_session
-            from src.crud import set_live_message
-
-            with get_session() as session:
-                # Persist as scope_type 'announcement' and no scope_key
-                # (global)
-                set_live_message(
+            async with get_async_session() as session:
+                await set_live_message_async(
                     session,
                     getattr(guild, "id", 0),
                     getattr(channel, "id", 0),
                     getattr(new_msg, "id", 0),
-                    scope_type="announcement",
-                    scope_key=None,
+                    "announcement",
+                    None,
                 )
         except Exception:
             # Non-fatal: we do not require live message pointer during announce
