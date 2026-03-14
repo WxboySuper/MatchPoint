@@ -170,7 +170,8 @@ class TestLoLParser:
             "id": 123456,
             "scheduled_at": "2024-03-15T10:00:00Z",
             "opponents": [],
-            "videogame": {"slug": "cs2"},
+            "videogame": {"slug": "counterstrike"},
+            "videogame_title": "Counter-Strike 2",
         }
 
         result = parser.extract_match_data(match_data, contest_id=1)
@@ -326,7 +327,7 @@ class TestPandaScoreSyncIntegration:
             new_callable=AsyncMock,
         ):
             result = await perform_pandascore_sync()
-            assert result is None
+            assert result == {"contests": 0, "matches": 0, "teams": 0}
 
     @pytest.mark.asyncio
     async def test_perform_pandascore_sync_fetches_all_configured_games(self):
@@ -444,6 +445,25 @@ class TestPandaScoreSyncIntegration:
 
 class TestPandaScoreClientRateLimiting:
     """Tests for rate limiting behavior."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_matches_maps_cs2_to_counter_strike_route(self):
+        from src.pandascore_client import PandaScoreClient
+
+        client = PandaScoreClient(api_key="test-key")
+
+        with patch.object(
+            client,
+            "_fetch_matches",
+            new_callable=AsyncMock,
+            return_value=[],
+        ) as mock_fetch:
+            await client.fetch_matches("upcoming", game="cs2")
+
+        endpoint = mock_fetch.await_args.args[0]
+        params = mock_fetch.await_args.args[1]
+        assert endpoint == "/counter-strike/matches/upcoming"
+        assert params["filter[videogame_title]"] == "CS2"
 
     @pytest.mark.asyncio
     async def test_rate_limit_tracking(self):

@@ -315,7 +315,6 @@ async def perform_pandascore_sync(
             "PandaScore sync failed for games: %s",
             ", ".join(failed_games),
         )
-        return None
     return total_summary
 
 
@@ -333,6 +332,7 @@ async def sync_running_matches() -> Dict[str, Any]:
 
     started = []
     finished = []
+    error = False
     for game_slug in await _configured_sync_games():
         try:
             running_matches = await pandascore_client.fetch_running_matches(
@@ -342,7 +342,8 @@ async def sync_running_matches() -> Dict[str, Any]:
             logger.exception(
                 "Failed to fetch running matches for %s", game_slug
             )
-            return {"started": [], "finished": [], "error": True}
+            error = True
+            continue
 
         async with get_async_session() as db_session:
             for match_data in running_matches:
@@ -368,7 +369,7 @@ async def sync_running_matches() -> Dict[str, Any]:
         len(started),
         len(finished),
     )
-    return {"started": started, "finished": finished}
+    return {"started": started, "finished": finished, "error": error}
 
 
 def _resolve_match_game(match, match_data: Dict[str, Any]) -> str:

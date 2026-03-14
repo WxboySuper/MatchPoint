@@ -28,7 +28,14 @@ def _team_display_name(team_info: dict[str, Any]) -> str:
 
 
 def _match_game_slug(match_data: dict[str, Any]) -> str:
-    return (match_data.get("videogame") or {}).get("slug") or "cs2"
+    videogame = match_data.get("videogame") or {}
+    raw_slug = (videogame.get("slug") or "").lower()
+    title = str(match_data.get("videogame_title") or "").lower()
+    if raw_slug in {"counterstrike", "counter-strike", "cs2"}:
+        return "cs2"
+    if "counter-strike 2" in title or title == "cs2":
+        return "cs2"
+    return raw_slug or "cs2"
 
 
 class CS2Parser(PandaScoreParser):
