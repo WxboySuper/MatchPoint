@@ -44,7 +44,6 @@ def _add_team_game_column() -> None:
             GAME_COLUMN,
             sqlmodel.sql.sqltypes.AutoString(),
             nullable=True,
-            server_default=sa.text("'lol'"),
         ),
     )
 
@@ -53,9 +52,7 @@ def _backfill_team_game() -> None:
     conn = op.get_bind()
     team1_col, team2_col = _match_team_id_columns()
     if team1_col and team2_col:
-        conn.execute(
-            sa.text(
-                f"""
+        conn.execute(sa.text(f"""
                 UPDATE team
                    SET game = COALESCE(
                        (
@@ -76,9 +73,7 @@ def _backfill_team_game() -> None:
                    )
                  WHERE pandascore_id IS NOT NULL
                    AND (game IS NULL OR TRIM(game) = '')
-                """
-            )
-        )
+                """))
     conn.execute(
         sa.text("""
             UPDATE team
@@ -138,9 +133,7 @@ def _restore_global_team_uniqueness() -> None:
     indexes = _index_names(TEAM_TABLE)
     constraints = _unique_constraint_names(TEAM_TABLE)
     with op.batch_alter_table(TEAM_TABLE, recreate="always") as batch_op:
-        _drop_constraint_if_present(
-            batch_op, constraints, "uq_team_name_game"
-        )
+        _drop_constraint_if_present(batch_op, constraints, "uq_team_name_game")
         _drop_constraint_if_present(
             batch_op,
             constraints,

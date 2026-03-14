@@ -3,7 +3,15 @@ import logging
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Callable, List, Optional, Tuple
+from typing import (
+    Any,
+    AsyncGenerator,
+    Callable,
+    List,
+    Optional,
+    Set,
+    Tuple,
+)
 
 import discord
 from sqlalchemy.orm import selectinload
@@ -370,7 +378,9 @@ async def _bulk_fetch_matches(session, match_ids: List[int]) -> List[Match]:
 async def _bulk_fetch_teams(session, matches: List[Match]) -> dict:
     games, ids, names = _collect_team_keys(matches)
 
-    if not games or (not ids and not names):
+    if not games:
+        return {}
+    if not ids and not names:
         return {}
 
     conditions = []
@@ -392,7 +402,9 @@ async def _bulk_fetch_teams(session, matches: List[Match]) -> dict:
     return {"id": by_id, "name": by_name}
 
 
-def _collect_team_keys(matches: List[Match]):
+def _collect_team_keys(
+    matches: List[Match],
+) -> Tuple[Set[str], Set[int], Set[str]]:
     games = set()
     ids = set()
     names = set()

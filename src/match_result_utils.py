@@ -238,11 +238,18 @@ async def fetch_teams(session, match: Match):
 
 
 def _build_team_lookup_stmt(match: Match, team_id, team_name):
-    stmt = select(Team).where(Team.game == _match_game(match))
+    stmt = select(Team)
+    game = _match_game(match)
+    if game is not None:
+        stmt = stmt.where(Team.game == game)
     if team_id:
         return stmt.where(Team.pandascore_id == team_id)
     return stmt.where(Team.name == team_name)
 
 
-def _match_game(match: Match) -> str:
-    return getattr(match, "game", None) or "lol"
+def _match_game(match: Match) -> Optional[str]:
+    game = getattr(match, "game", None)
+    if game is None:
+        return None
+    normalized = game.strip().lower()
+    return normalized or None

@@ -121,9 +121,12 @@ async def _get_team_by_name(
 def _update_team_from_data(team: Team, team_data: dict) -> None:
     """Updates existing team fields from data."""
     logger.info("Updating existing team: %s", team.name)
-    for key in ["name", "acronym", "image_url", "pandascore_id", "game"]:
+    for key in ["name", "acronym", "image_url"]:
         if key in team_data and team_data[key] is not None:
             setattr(team, key, team_data[key])
+    incoming_pandascore_id = team_data.get("pandascore_id")
+    if team.pandascore_id is None and incoming_pandascore_id is not None:
+        team.pandascore_id = incoming_pandascore_id
 
 
 def _create_team_from_data(team_data: dict) -> Team:
@@ -141,7 +144,10 @@ async def get_team_by_pandascore_id(
     Fetch a team by its PandaScore ID.
 
     Parameters:
-        pandascore_id: The PandaScore team ID
+        pandascore_id: The PandaScore team ID.
+        game (Optional[str]): Optional game slug filter. When provided,
+            the query is constrained to teams whose `Team.game` matches
+            the supplied slug.
 
     Returns:
         Optional[Team]: The Team if found, None otherwise
