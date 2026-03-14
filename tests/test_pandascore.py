@@ -6,6 +6,17 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
+def _make_mock_match(
+    team1_id=100, team2_id=200, team1="Team A", team2="Team B"
+):
+    match = MagicMock()
+    match.team1_id = team1_id
+    match.team2_id = team2_id
+    match.team1 = team1
+    match.team2 = team2
+    return match
+
+
 class TestPandaScoreClient:
     """Tests for PandaScoreClient class."""
 
@@ -178,7 +189,8 @@ class TestLoLParser:
         assert result is not None
         assert result["game"] == "cs2"
 
-    def test_extract_match_data_missing_opponents(self, parser):
+    @staticmethod
+    def test_extract_match_data_missing_opponents(parser):
         """Test extracting match data with fewer than 2 opponents."""
         match_data = {
             "id": 123456,
@@ -196,16 +208,6 @@ class TestLoLParser:
 class TestPandaScorePollingHelpers:
     """Tests for polling helper functions."""
 
-    def _make_mock_match(
-        self, team1_id=100, team2_id=200, team1="Team A", team2="Team B"
-    ):
-        m = MagicMock()
-        m.team1_id = team1_id
-        m.team2_id = team2_id
-        m.team1 = team1
-        m.team2 = team2
-        return m
-
     def test_extract_scores_from_pandascore(self):
         """Test extracting scores from match data."""
         from src.pandascore_polling_core import _extract_scores_from_pandascore
@@ -217,7 +219,7 @@ class TestPandaScorePollingHelpers:
             ]
         }
 
-        match = self._make_mock_match()
+        match = _make_mock_match()
 
         team1_score, team2_score = _extract_scores_from_pandascore(
             match_data, match
@@ -236,7 +238,7 @@ class TestPandaScorePollingHelpers:
             "status": "finished",
         }
 
-        match = self._make_mock_match()
+        match = _make_mock_match()
 
         winner = _determine_winner_from_pandascore(
             match_data_winner, match, 2, 1
@@ -258,7 +260,7 @@ class TestPandaScorePollingHelpers:
             _determine_winner_from_pandascore,
         )
 
-        match = self._make_mock_match()
+        match = _make_mock_match()
 
         winner = _determine_winner_from_pandascore(
             match_data, match, team1_score, team2_score
@@ -403,7 +405,8 @@ class TestPandaScoreSyncIntegration:
                 return self._rows
 
         class _AsyncSession:
-            async def exec(self, stmt):
+            @staticmethod
+            async def exec(stmt):
                 _ = stmt
                 return _ResultWrapper(["cs2"])
 
