@@ -11,30 +11,32 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy.exc import OperationalError
 from sqlmodel import select
+
+from src.crud import get_match_by_pandascore_id
+from src.db import get_async_session
 from src.models import GuildConfig, Match, Result
+from src.notification_batcher import batcher
+from src.notifications import (
+    send_match_time_change_notification,
+    send_result_notification,
+)
 from src.pandascore_client import (
-    pandascore_client,
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
-)
-from src.db import get_async_session
-from src.crud import get_match_by_pandascore_id
-from src.notifications import (
-    send_result_notification,
-    send_match_time_change_notification,
-)
-from src.notification_batcher import batcher
-from src.pandascore_utils import (
-    safe_schedule,
-    safe_notify,
-    maybe_start_running_match,
-    maybe_finish_running_match,
+    pandascore_client,
 )
 from src.pandascore_processing import (
     PandaScoreSyncContext,
-    _process_single_match,
     _detect_match_result,
+    _process_single_match,
 )
+from src.pandascore_utils import (
+    maybe_finish_running_match,
+    maybe_start_running_match,
+    safe_notify,
+    safe_schedule,
+)
+from src.parsers.cs2 import normalize_counter_strike_slug
 from src.parsers.factory import get_parser, get_supported_game_slugs
 
 logger = logging.getLogger(__name__)
@@ -189,16 +191,12 @@ async def _run_post_sync_actions(
             if (i + 1) % batch == 0:
                 await asyncio.sleep(0)
 
-    # Run all notification-related actions within a batching context
-    # so they are flushed as a single announcement (per type) at the end.
     async with batcher.batching():
-        # 1. Schedule reminders
         match_calls: List[Callable[[], Awaitable[None]]] = [
             (lambda m=match: safe_schedule(m)) for match in matches_to_schedule
         ]
         await _process_with_yield_calls(match_calls, batch=5)
 
-        # 2. Send result notifications
         logger.info("Sending %d result notifications...", len(notifications))
         notif_calls: List[Callable[[], Awaitable[None]]] = [
             (lambda mid=mid, rid=rid: safe_notify(mid, rid))
@@ -206,7 +204,6 @@ async def _run_post_sync_actions(
         ]
         await _process_with_yield_calls(notif_calls, batch=5)
 
-        # 3. Send time change notifications
         if time_change_notifications:
             logger.info(
                 "Sending %d time change notifications...",
@@ -265,10 +262,21 @@ async def _fetch_matches_for_sync(
         upcoming, running, past = await asyncio.gather(
             upcoming_coro, running_coro, past_coro
         )
+        logger.info(
+            "Fetched %s matches from PandaScore: %d upcoming, %d running, "
+            "%d recent past",
+            game_slug,
+            len(upcoming),
+            len(running),
+            len(past),
+        )
 
         return upcoming + running + past
     except Exception:
-        logger.exception("Failed to fetch matches from PandaScore")
+        logger.exception(
+            "Failed to fetch matches from PandaScore for %s",
+            game_slug,
+        )
         return None
 
 
@@ -358,12 +366,15 @@ async def perform_pandascore_sync(
     notifications: List[Tuple[int, int]] = []
     time_changes: List[Tuple[Any, Any, Any]] = []
     failed_games: List[str] = []
+    completed_games = 0
 
     for game_slug in await _configured_sync_games(game):
         sync_result = await _sync_game_matches(league_ids, game_slug)
         if sync_result is None:
             failed_games.append(game_slug)
             continue
+
+        completed_games += 1
         (
             game_matches_to_schedule,
             game_notifications,
@@ -386,6 +397,8 @@ async def perform_pandascore_sync(
             "PandaScore sync failed for games: %s",
             ", ".join(failed_games),
         )
+        if completed_games == 0:
+            return None
     return total_summary
 
 
@@ -418,21 +431,32 @@ async def sync_running_matches() -> Dict[str, Any]:
     return {"started": started, "finished": finished, "error": error}
 
 
+def _match_data_game(match_data: Dict[str, Any]) -> Optional[str]:
+    videogame = match_data.get("videogame") or {}
+    raw_slug = (videogame.get("slug") or "").lower()
+    title = str(match_data.get("videogame_title") or "").lower()
+    return normalize_counter_strike_slug(raw_slug, title) or raw_slug or None
+
+
+def _default_sync_game() -> str:
+    from src.config import DEFAULT_GAMES
+
+    supported = set(get_supported_game_slugs())
+    for game_slug in DEFAULT_GAMES or ["lol"]:
+        if game_slug in supported:
+            return game_slug
+    return "lol"
+
+
 def _resolve_match_game(match, match_data: Dict[str, Any]) -> str:
     if getattr(match, "game", None):
         return match.game
 
-    videogame = match_data.get("videogame") or {}
-    if videogame.get("slug"):
-        return videogame["slug"]
+    resolved_game = _match_data_game(match_data)
+    if resolved_game:
+        return resolved_game
 
-    from src.config import DEFAULT_GAMES
-
-    supported = set(get_supported_game_slugs())
-    for game in DEFAULT_GAMES or ["lol"]:
-        if game in supported:
-            return game
-    return "lol"
+    return _default_sync_game()
 
 
 async def fetch_and_update_match_result(

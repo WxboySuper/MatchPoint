@@ -90,8 +90,8 @@ class TestLoLParser:
 
         return LoLParser()
 
-    # skipcq: PYL-R0201
-    def test_parse_date_valid(self, parser):
+    @staticmethod
+    def test_parse_date_valid(parser):
         """Test parsing a valid ISO 8601 date."""
         result = parser.parse_date("2024-03-15T10:00:00Z")
         assert result is not None
@@ -101,17 +101,20 @@ class TestLoLParser:
         assert result.hour == 10
         assert result.tzinfo is not None
 
-    def test_parse_date_none(self, parser):
+    @staticmethod
+    def test_parse_date_none(parser):
         """Test parsing None returns None."""
         result = parser.parse_date(None)
         assert result is None
 
-    def test_parse_date_invalid(self, parser):
+    @staticmethod
+    def test_parse_date_invalid(parser):
         """Test parsing invalid date returns None."""
         result = parser.parse_date("not-a-date")
         assert result is None
 
-    def test_extract_team_data_valid(self, parser):
+    @staticmethod
+    def test_extract_team_data_valid(parser):
         """Test extracting team data from opponent object."""
         opponent = {
             "opponent": {
@@ -128,12 +131,14 @@ class TestLoLParser:
         assert result["name"] == "Team A"
         assert result["acronym"] == "TA"
 
-    def test_extract_team_data_missing_opponent(self, parser):
+    @staticmethod
+    def test_extract_team_data_missing_opponent(parser):
         """Test extracting team data with missing opponent key."""
         result = parser.extract_team_data({})
         assert result is None
 
-    def test_extract_contest_data(self, parser):
+    @staticmethod
+    def test_extract_contest_data(parser):
         """Test extracting contest data from match."""
         match_data = {
             "league": {"id": 1, "name": "LCS", "image_url": "http://img"},
@@ -152,7 +157,8 @@ class TestLoLParser:
         assert "Spring" in result["name"]
         assert result["image_url"] == "http://img"
 
-    def test_extract_match_data_valid(self, parser):
+    @staticmethod
+    def test_extract_match_data_valid(parser):
         """Test extracting match data from PandaScore match object."""
         match_data = {
             "id": 123456,
@@ -181,13 +187,12 @@ class TestLoLParser:
             "id": 123456,
             "scheduled_at": "2024-03-15T10:00:00Z",
             "opponents": [],
-            "videogame": {"slug": "counterstrike"},
-            "videogame_title": "Counter-Strike 2",
+            "videogame": {"slug": "lol"},
         }
 
         result = parser.extract_match_data(match_data, contest_id=1)
         assert result is not None
-        assert result["game"] == "cs2"
+        assert result["game"] == "lol"
 
     @staticmethod
     def test_extract_match_data_missing_opponents(parser):
@@ -208,7 +213,8 @@ class TestLoLParser:
 class TestPandaScorePollingHelpers:
     """Tests for polling helper functions."""
 
-    def test_extract_scores_from_pandascore(self):
+    @staticmethod
+    def test_extract_scores_from_pandascore():
         """Test extracting scores from match data."""
         from src.pandascore_polling_core import _extract_scores_from_pandascore
 
@@ -253,8 +259,9 @@ class TestPandaScorePollingHelpers:
             ({"winner_id": None, "status": "running"}, 1, 1, None),
         ],
     )
+    @staticmethod
     def test_determine_winner_parametrized(
-        self, match_data, team1_score, team2_score, expected
+        match_data, team1_score, team2_score, expected
     ):
         """Parametrized test for winner detection (finished vs running)."""
         from src.pandascore_polling_core import (
@@ -293,12 +300,28 @@ class TestCS2Parser:
         assert result is not None
         assert result["game"] == "cs2"
 
+    @staticmethod
+    def test_extract_match_data_normalizes_counterstrike_payload(parser):
+        match_data = {
+            "id": 987654,
+            "scheduled_at": "2024-03-15T10:00:00Z",
+            "status": "not_started",
+            "opponents": [],
+            "videogame": {"slug": "counterstrike"},
+            "videogame_title": "Counter-Strike 2",
+        }
+
+        result = parser.extract_match_data(match_data, contest_id=1)
+        assert result is not None
+        assert result["game"] == "cs2"
+
 
 class TestPandaScoreSyncIntegration:
     """Integration tests for PandaScore sync (mocked API)."""
 
+    @staticmethod
     @pytest.mark.asyncio
-    async def test_perform_pandascore_sync_empty_response(self):
+    async def test_perform_pandascore_sync_empty_response():
         """Test sync with no matches returned."""
         from src.pandascore_sync import perform_pandascore_sync
 
@@ -316,8 +339,9 @@ class TestPandaScoreSyncIntegration:
             assert result["contests"] == 0
             assert result["teams"] == 0
 
+    @staticmethod
     @pytest.mark.asyncio
-    async def test_perform_pandascore_sync_api_error(self):
+    async def test_perform_pandascore_sync_api_error():
         """Test sync handles API errors gracefully."""
         from src.pandascore_sync import perform_pandascore_sync
 
@@ -330,10 +354,11 @@ class TestPandaScoreSyncIntegration:
             new_callable=AsyncMock,
         ):
             result = await perform_pandascore_sync()
-            assert result == {"contests": 0, "matches": 0, "teams": 0}
+            assert result is None
 
+    @staticmethod
     @pytest.mark.asyncio
-    async def test_perform_pandascore_sync_fetches_all_configured_games(self):
+    async def test_perform_pandascore_sync_fetches_all_configured_games():
         from src.pandascore_sync import perform_pandascore_sync
 
         async def _fetch_matches(kind, options=None, game="lol"):
@@ -394,8 +419,9 @@ class TestPandaScoreSyncIntegration:
         assert requested_games == {"lol", "cs2"}
         assert result is not None
 
+    @staticmethod
     @pytest.mark.asyncio
-    async def test_perform_pandascore_sync_includes_guild_enabled_games(self):
+    async def test_perform_pandascore_sync_includes_guild_enabled_games():
         from src.pandascore_sync import perform_pandascore_sync
 
         class _ResultWrapper:
@@ -450,8 +476,9 @@ class TestPandaScoreSyncIntegration:
 class TestPandaScoreClientRateLimiting:
     """Tests for rate limiting behavior."""
 
+    @staticmethod
     @pytest.mark.asyncio
-    async def test_fetch_matches_maps_cs2_to_counter_strike_route(self):
+    async def test_fetch_matches_maps_cs2_to_csgo_route():
         from src.pandascore_client import PandaScoreClient
 
         client = PandaScoreClient(api_key="test-key")
@@ -466,11 +493,30 @@ class TestPandaScoreClientRateLimiting:
 
         endpoint = mock_fetch.await_args.args[0]
         params = mock_fetch.await_args.args[1]
-        assert endpoint == "/counter-strike/matches/upcoming"
-        assert params["filter[videogame_title]"] == "CS2"
+        assert endpoint == "/csgo/matches/upcoming"
+        assert "filter[videogame_title]" not in params
 
+    @staticmethod
     @pytest.mark.asyncio
-    async def test_rate_limit_tracking(self):
+    async def test_fetch_match_by_id_maps_cs2_to_csgo_route():
+        from src.pandascore_client import PandaScoreClient
+
+        client = PandaScoreClient(api_key="test-key")
+
+        with patch.object(
+            client,
+            "_make_request",
+            new_callable=AsyncMock,
+            return_value={},
+        ) as mock_request:
+            await client.fetch_match_by_id(42, game="cs2")
+
+        assert mock_request.await_args.args[0] == "/csgo/matches/42"
+        assert mock_request.await_args.kwargs.get("params") is None
+
+    @staticmethod
+    @pytest.mark.asyncio
+    async def test_rate_limit_tracking():
         """Test that rate limit tracking is initialized."""
         from src.pandascore_client import PandaScoreClient
 
