@@ -56,7 +56,15 @@ class SyncMatches(commands.Cog):
         try:
             summary = await perform_pandascore_sync()
             if summary is not None:
-                await update_upcoming_live_messages()
+                try:
+                    await update_upcoming_live_messages()
+                except (asyncio.TimeoutError, discord.HTTPException):
+                    logger.exception(
+                        "Live message refresh failed after sync for guild %s",
+                        getattr(
+                            getattr(interaction, "guild", None), "id", None
+                        ),
+                    )
 
             # Retrieve the logs
             log_contents = log_stream.getvalue()
@@ -105,7 +113,7 @@ class SyncMatches(commands.Cog):
         await interaction.response.defer(ephemeral=True, thinking=True)
 
         try:
-            await update_upcoming_live_messages()
+            refreshed = await update_upcoming_live_messages()
         except (asyncio.TimeoutError, discord.HTTPException):
             logger.exception(
                 "Failed refreshing live messages manually for guild %s",
@@ -117,10 +125,12 @@ class SyncMatches(commands.Cog):
             )
             return
 
-        await interaction.followup.send(
-            "Live messages refreshed.",
-            ephemeral=True,
+        message = (
+            "Live messages refreshed."
+            if refreshed
+            else "Refresh already running. Try again later."
         )
+        await interaction.followup.send(message, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

@@ -556,13 +556,18 @@ def _populate_list_embed(
 batcher = NotificationBatcher()
 
 
-async def update_upcoming_live_messages() -> None:
-    """Refresh all canonical live messages from database state."""
+async def update_upcoming_live_messages() -> bool:
+    """Refresh all canonical live messages from database state.
+
+    Returns True when a refresh ran and False when another refresh is already
+    in progress.
+    """
     if _upcoming_live_update_lock.locked():
         logger.info(
             "Skipping live message refresh; another refresh is running."
         )
-        return
+        return False
 
     async with _upcoming_live_update_lock:
         await refresh_all_live_messages()
+    return True

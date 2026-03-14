@@ -25,6 +25,10 @@ JSONType = Union[Dict[str, Any], List[Any], str, int, float, bool, None]
 BASE_URL = "https://api.pandascore.co"
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 100
+GAME_ROUTE_MAP = {
+    "lol": ("lol", {}),
+    "cs2": ("counter-strike", {"filter[videogame_title]": "CS2"}),
+}
 
 # Rate limit: 1,000 requests/hour = ~16.7 req/min
 # We'll be conservative and track our usage
@@ -119,6 +123,14 @@ class PandaScoreClient:
     @staticmethod
     def _build_url(endpoint: str) -> str:
         return f"{BASE_URL}{endpoint}"
+
+    @staticmethod
+    def _resolve_game_route(
+        game: str,
+    ) -> Tuple[str, Dict[str, Any], str]:
+        normalized = (game or "lol").lower()
+        route, extra_params = GAME_ROUTE_MAP.get(normalized, (normalized, {}))
+        return route, dict(extra_params), normalized
 
     @staticmethod
     async def _do_request_once(
@@ -391,17 +403,28 @@ class PandaScoreClient:
         """
         opts = options or {}
         k = (kind or "").lower()
-        g = (game or "lol").lower()
+        route_game, game_params, normalized_game = self._resolve_game_route(
+            game
+        )
 
         # Endpoint selection mapping
         mapping = {
             "upcoming": (
-                f"/{g}/matches/upcoming",
-                f"upcoming {g} matches (page {{page}})",
+                f"/{route_game}/matches/upcoming",
+                f"upcoming {normalized_game} matches (page {{page}})",
             ),
-            "recent_past": (f"/{g}/matches/past", f"recent past {g} matches"),
-            "past": (f"/{g}/matches/past", f"past {g} matches"),
-            "running": (f"/{g}/matches/running", f"running {g} matches"),
+            "recent_past": (
+                f"/{route_game}/matches/past",
+                f"recent past {normalized_game} matches",
+            ),
+            "past": (
+                f"/{route_game}/matches/past",
+                f"past {normalized_game} matches",
+            ),
+            "running": (
+                f"/{route_game}/matches/running",
+                f"running {normalized_game} matches",
+            ),
         }
 
         entry = mapping.get(k)
@@ -412,6 +435,7 @@ class PandaScoreClient:
         params, description = self._prepare_fetch_context(
             k, opts, desc_template
         )
+        params.update(game_params)
 
         return await self._fetch_matches(endpoint, params, description)
 
@@ -519,9 +543,18 @@ class PandaScoreClient:
             Match object or None if not found
         """
         try:
-            result = await self._make_request(f"/{game}/matches/{match_id}")
+            route_game, game_params, normalized_game = (
+                self._resolve_game_route(game)
+            )
+            result = await self._make_request(
+                f"/{route_game}/matches/{match_id}",
+                params=game_params or None,
+            )
             logger.debug(
-                "Fetched match %d: status=%s", match_id, result.get("status")
+                "Fetched %s match %d: status=%s",
+                normalized_game,
+                match_id,
+                result.get("status"),
             )
             return result
         except PandaScoreError as e:
