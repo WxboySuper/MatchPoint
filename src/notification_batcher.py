@@ -368,9 +368,9 @@ async def _bulk_fetch_matches(session, match_ids: List[int]) -> List[Match]:
 
 
 async def _bulk_fetch_teams(session, matches: List[Match]) -> dict:
-    ids, names = _collect_team_ids_and_names(matches)
+    games, ids, names = _collect_team_keys(matches)
 
-    if not ids and not names:
+    if not games or (not ids and not names):
         return {}
 
     conditions = []
@@ -379,19 +379,25 @@ async def _bulk_fetch_teams(session, matches: List[Match]) -> dict:
     if names:
         conditions.append(Team.name.in_(names))
 
-    stmt = select(Team).where(or_(*conditions))
+    stmt = select(Team).where(Team.game.in_(games), or_(*conditions))
     teams = (await session.exec(stmt)).all()
 
-    # Map by ID and Name
-    by_id = {t.pandascore_id: t for t in teams if t.pandascore_id}
-    by_name = {t.name: t for t in teams}
+    # Map by (game, ID) and (game, name)
+    by_id = {
+        (t.game, t.pandascore_id): t
+        for t in teams
+        if t.pandascore_id is not None
+    }
+    by_name = {(t.game, t.name): t for t in teams}
     return {"id": by_id, "name": by_name}
 
 
-def _collect_team_ids_and_names(matches: List[Match]):
+def _collect_team_keys(matches: List[Match]):
+    games = set()
     ids = set()
     names = set()
     for m in matches:
+        games.add(_match_game(m))
         if m.team1_id:
             ids.add(m.team1_id)
         else:
@@ -401,7 +407,7 @@ def _collect_team_ids_and_names(matches: List[Match]):
             ids.add(m.team2_id)
         else:
             names.add(m.team2)
-    return ids, names
+    return games, ids, names
 
 
 def _resolve_teams(
@@ -409,18 +415,23 @@ def _resolve_teams(
 ) -> Tuple[Optional[Team], Optional[Team]]:
     by_id = teams_map.get("id", {})
     by_name = teams_map.get("name", {})
+    game = _match_game(match)
 
     t1 = (
-        by_id.get(match.team1_id)
+        by_id.get((game, match.team1_id))
         if match.team1_id
-        else by_name.get(match.team1)
+        else by_name.get((game, match.team1))
     )
     t2 = (
-        by_id.get(match.team2_id)
+        by_id.get((game, match.team2_id))
         if match.team2_id
-        else by_name.get(match.team2)
+        else by_name.get((game, match.team2))
     )
     return t1, t2
+
+
+def _match_game(match: Match) -> str:
+    return getattr(match, "game", None) or "lol"
 
 
 async def _bulk_fetch_pick_stats(session, match_ids: List[int]) -> dict:

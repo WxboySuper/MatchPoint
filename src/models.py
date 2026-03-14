@@ -47,10 +47,19 @@ class User(SQLModel, table=True):
 
 
 class Team(SQLModel, table=True):
+    __table_args__ = (
+        sa.UniqueConstraint("name", "game", name="uq_team_name_game"),
+        sa.UniqueConstraint(
+            "pandascore_id",
+            "game",
+            name="uq_team_pandascore_id_game",
+        ),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(index=True, unique=True)
+    name: str = Field(index=True)
+    game: str = Field(default="lol", index=True)
     leaguepedia_id: Optional[str] = Field(default=None, index=True)
-    pandascore_id: Optional[int] = Field(default=None, index=True, unique=True)
+    pandascore_id: Optional[int] = Field(default=None, index=True)
     image_url: Optional[str] = None
     acronym: Optional[str] = None
     roster: Optional[str] = None  # Storing as JSON string

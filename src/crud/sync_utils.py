@@ -39,14 +39,15 @@ async def _upsert_by_leaguepedia(
         return None
 
     try:
-        obj = await _find_existing_by_leaguepedia(
-            session, model, leaguepedia_id
-        )
-        if obj is None:
-            return await _create_new_by_leaguepedia(session, model, data)
-        return await _update_existing_by_leaguepedia(
-            session, obj, data, update_keys
-        )
+        async with session.begin_nested():
+            obj = await _find_existing_by_leaguepedia(
+                session, model, leaguepedia_id
+            )
+            if obj is None:
+                return await _create_new_by_leaguepedia(session, model, data)
+            return await _update_existing_by_leaguepedia(
+                session, obj, data, update_keys
+            )
     except Exception:
         logger.exception(
             "Error upserting %s with data: %s",

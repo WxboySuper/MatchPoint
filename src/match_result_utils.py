@@ -229,16 +229,20 @@ async def fetch_teams(session, match: Match):
             function does not raise on missing teams; callers should
             handle `None` values appropriately.
     """
-    if match.team1_id:
-        t1_stmt = select(Team).where(Team.pandascore_id == match.team1_id)
-    else:
-        t1_stmt = select(Team).where(Team.name == match.team1)
-
-    if match.team2_id:
-        t2_stmt = select(Team).where(Team.pandascore_id == match.team2_id)
-    else:
-        t2_stmt = select(Team).where(Team.name == match.team2)
+    t1_stmt = _build_team_lookup_stmt(match, match.team1_id, match.team1)
+    t2_stmt = _build_team_lookup_stmt(match, match.team2_id, match.team2)
 
     team1 = (await session.exec(t1_stmt)).first()
     team2 = (await session.exec(t2_stmt)).first()
     return team1, team2
+
+
+def _build_team_lookup_stmt(match: Match, team_id, team_name):
+    stmt = select(Team).where(Team.game == _match_game(match))
+    if team_id:
+        return stmt.where(Team.pandascore_id == team_id)
+    return stmt.where(Team.name == team_name)
+
+
+def _match_game(match: Match) -> str:
+    return getattr(match, "game", None) or "lol"
