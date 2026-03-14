@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import discord
@@ -23,6 +24,28 @@ async def test_refresh_live_messages_command_triggers_refresh():
     mock_refresh.assert_awaited_once()
     interaction.followup.send.assert_awaited_once_with(
         "Live messages refreshed.",
+        ephemeral=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_refresh_live_messages_command_reports_already_running():
+    interaction = AsyncMock(spec=discord.Interaction)
+    interaction.response = AsyncMock()
+    interaction.followup = AsyncMock()
+
+    cog = SyncMatches(bot=AsyncMock())
+
+    with patch(
+        "src.commands.sync_matches.update_upcoming_live_messages",
+        new_callable=AsyncMock,
+        return_value=False,
+    ) as mock_refresh:
+        await cog.refresh_live_messages.callback(cog, interaction)
+
+    mock_refresh.assert_awaited_once()
+    interaction.followup.send.assert_awaited_once_with(
+        "Refresh already running. Try again later.",
         ephemeral=True,
     )
 
@@ -73,3 +96,53 @@ async def test_refresh_live_messages_command_reports_expected_failure():
         "Live message refresh failed. Check logs for details.",
         ephemeral=True,
     )
+
+
+@pytest.mark.asyncio
+async def test_refresh_live_messages_command_reports_timeout_failure():
+    interaction = AsyncMock(spec=discord.Interaction)
+    interaction.response = AsyncMock()
+    interaction.followup = AsyncMock()
+    interaction.guild = AsyncMock()
+    interaction.guild.id = 123
+
+    cog = SyncMatches(bot=AsyncMock())
+
+    with patch(
+        "src.commands.sync_matches.update_upcoming_live_messages",
+        new_callable=AsyncMock,
+        side_effect=asyncio.TimeoutError(),
+    ) as mock_refresh:
+        await cog.refresh_live_messages.callback(cog, interaction)
+
+    mock_refresh.assert_awaited_once()
+    interaction.followup.send.assert_awaited_once_with(
+        "Live message refresh failed. Check logs for details.",
+        ephemeral=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_sync_matches_still_reports_summary_when_refresh_fails():
+    interaction = AsyncMock(spec=discord.Interaction)
+    interaction.response = AsyncMock()
+    interaction.followup = AsyncMock()
+    interaction.guild = AsyncMock()
+    interaction.guild.id = 456
+
+    cog = SyncMatches(bot=AsyncMock())
+
+    with patch(
+        "src.commands.sync_matches.perform_pandascore_sync",
+        new_callable=AsyncMock,
+        return_value={"contests": 1, "matches": 2, "teams": 3},
+    ), patch(
+        "src.commands.sync_matches.update_upcoming_live_messages",
+        new_callable=AsyncMock,
+        side_effect=asyncio.TimeoutError(),
+    ):
+        await cog.sync_matches.callback(cog, interaction)
+
+    interaction.followup.send.assert_awaited_once()
+    sent_message = interaction.followup.send.await_args.args[0]
+    assert "PandaScore sync complete!" in sent_message

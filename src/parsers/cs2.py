@@ -27,22 +27,24 @@ def _team_display_name(team_info: dict[str, Any]) -> str:
     return team_info.get("name") or team_info.get("acronym") or "TBD"
 
 
-def _normalize_cs2_game_slug(match_data: dict[str, Any]) -> Optional[str]:
-    videogame = match_data.get("videogame") or {}
-    slug = (videogame.get("slug") or "").strip().lower()
-    title = (match_data.get("videogame_title") or "").strip().lower()
+def normalize_counter_strike_slug(
+    raw_slug: Optional[str], title: str = ""
+) -> Optional[str]:
+    slug = (raw_slug or "").strip().lower()
+    normalized_title = title.strip().lower()
 
     if slug in {"cs2", "csgo", "counterstrike", "counter-strike"}:
         return "cs2"
-    if "counter-strike 2" in title or title == "cs2":
+    if "counter-strike 2" in normalized_title or normalized_title == "cs2":
         return "cs2"
-    if slug:
-        return slug
     return None
 
 
 def _match_game_slug(match_data: dict[str, Any]) -> str:
-    return _normalize_cs2_game_slug(match_data) or "cs2"
+    videogame = match_data.get("videogame") or {}
+    raw_slug = (videogame.get("slug") or "").lower()
+    title = str(match_data.get("videogame_title") or "").lower()
+    return normalize_counter_strike_slug(raw_slug, title) or raw_slug or "cs2"
 
 
 class CS2Parser(PandaScoreParser):

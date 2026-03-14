@@ -6,6 +6,17 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
+def _make_mock_match(
+    team1_id=100, team2_id=200, team1="Team A", team2="Team B"
+):
+    match = MagicMock()
+    match.team1_id = team1_id
+    match.team2_id = team2_id
+    match.team1 = team1
+    match.team2 = team2
+    return match
+
+
 class TestPandaScoreClient:
     """Tests for PandaScoreClient class."""
 
@@ -79,8 +90,8 @@ class TestLoLParser:
 
         return LoLParser()
 
-    # skipcq: PYL-R0201
-    def test_parse_date_valid(self, parser):
+    @staticmethod
+    def test_parse_date_valid(parser):
         """Test parsing a valid ISO 8601 date."""
         result = parser.parse_date("2024-03-15T10:00:00Z")
         assert result is not None
@@ -90,17 +101,20 @@ class TestLoLParser:
         assert result.hour == 10
         assert result.tzinfo is not None
 
-    def test_parse_date_none(self, parser):
+    @staticmethod
+    def test_parse_date_none(parser):
         """Test parsing None returns None."""
         result = parser.parse_date(None)
         assert result is None
 
-    def test_parse_date_invalid(self, parser):
+    @staticmethod
+    def test_parse_date_invalid(parser):
         """Test parsing invalid date returns None."""
         result = parser.parse_date("not-a-date")
         assert result is None
 
-    def test_extract_team_data_valid(self, parser):
+    @staticmethod
+    def test_extract_team_data_valid(parser):
         """Test extracting team data from opponent object."""
         opponent = {
             "opponent": {
@@ -117,12 +131,14 @@ class TestLoLParser:
         assert result["name"] == "Team A"
         assert result["acronym"] == "TA"
 
-    def test_extract_team_data_missing_opponent(self, parser):
+    @staticmethod
+    def test_extract_team_data_missing_opponent(parser):
         """Test extracting team data with missing opponent key."""
         result = parser.extract_team_data({})
         assert result is None
 
-    def test_extract_contest_data(self, parser):
+    @staticmethod
+    def test_extract_contest_data(parser):
         """Test extracting contest data from match."""
         match_data = {
             "league": {"id": 1, "name": "LCS", "image_url": "http://img"},
@@ -141,7 +157,8 @@ class TestLoLParser:
         assert "Spring" in result["name"]
         assert result["image_url"] == "http://img"
 
-    def test_extract_match_data_valid(self, parser):
+    @staticmethod
+    def test_extract_match_data_valid(parser):
         """Test extracting match data from PandaScore match object."""
         match_data = {
             "id": 123456,
@@ -177,7 +194,8 @@ class TestLoLParser:
         assert result is not None
         assert result["game"] == "lol"
 
-    def test_extract_match_data_missing_opponents(self, parser):
+    @staticmethod
+    def test_extract_match_data_missing_opponents(parser):
         """Test extracting match data with fewer than 2 opponents."""
         match_data = {
             "id": 123456,
@@ -195,17 +213,8 @@ class TestLoLParser:
 class TestPandaScorePollingHelpers:
     """Tests for polling helper functions."""
 
-    def _make_mock_match(
-        self, team1_id=100, team2_id=200, team1="Team A", team2="Team B"
-    ):
-        m = MagicMock()
-        m.team1_id = team1_id
-        m.team2_id = team2_id
-        m.team1 = team1
-        m.team2 = team2
-        return m
-
-    def test_extract_scores_from_pandascore(self):
+    @staticmethod
+    def test_extract_scores_from_pandascore():
         """Test extracting scores from match data."""
         from src.pandascore_polling_core import _extract_scores_from_pandascore
 
@@ -216,7 +225,7 @@ class TestPandaScorePollingHelpers:
             ]
         }
 
-        match = self._make_mock_match()
+        match = _make_mock_match()
 
         team1_score, team2_score = _extract_scores_from_pandascore(
             match_data, match
@@ -224,7 +233,8 @@ class TestPandaScorePollingHelpers:
         assert team1_score == 2
         assert team2_score == 1
 
-    def test_determine_winner_from_pandascore(self):
+    @staticmethod
+    def test_determine_winner_from_pandascore():
         """Test determining winner from match data."""
         from src.pandascore_polling_core import (
             _determine_winner_from_pandascore,
@@ -235,7 +245,7 @@ class TestPandaScorePollingHelpers:
             "status": "finished",
         }
 
-        match = self._make_mock_match()
+        match = _make_mock_match()
 
         winner = _determine_winner_from_pandascore(
             match_data_winner, match, 2, 1
@@ -249,15 +259,16 @@ class TestPandaScorePollingHelpers:
             ({"winner_id": None, "status": "running"}, 1, 1, None),
         ],
     )
+    @staticmethod
     def test_determine_winner_parametrized(
-        self, match_data, team1_score, team2_score, expected
+        match_data, team1_score, team2_score, expected
     ):
         """Parametrized test for winner detection (finished vs running)."""
         from src.pandascore_polling_core import (
             _determine_winner_from_pandascore,
         )
 
-        match = self._make_mock_match()
+        match = _make_mock_match()
 
         winner = _determine_winner_from_pandascore(
             match_data, match, team1_score, team2_score
@@ -308,8 +319,9 @@ class TestCS2Parser:
 class TestPandaScoreSyncIntegration:
     """Integration tests for PandaScore sync (mocked API)."""
 
+    @staticmethod
     @pytest.mark.asyncio
-    async def test_perform_pandascore_sync_empty_response(self):
+    async def test_perform_pandascore_sync_empty_response():
         """Test sync with no matches returned."""
         from src.pandascore_sync import perform_pandascore_sync
 
@@ -327,8 +339,9 @@ class TestPandaScoreSyncIntegration:
             assert result["contests"] == 0
             assert result["teams"] == 0
 
+    @staticmethod
     @pytest.mark.asyncio
-    async def test_perform_pandascore_sync_api_error(self):
+    async def test_perform_pandascore_sync_api_error():
         """Test sync handles API errors gracefully."""
         from src.pandascore_sync import perform_pandascore_sync
 
@@ -343,8 +356,9 @@ class TestPandaScoreSyncIntegration:
             result = await perform_pandascore_sync()
             assert result is None
 
+    @staticmethod
     @pytest.mark.asyncio
-    async def test_perform_pandascore_sync_fetches_all_configured_games(self):
+    async def test_perform_pandascore_sync_fetches_all_configured_games():
         from src.pandascore_sync import perform_pandascore_sync
 
         async def _fetch_matches(kind, options=None, game="lol"):
@@ -405,8 +419,9 @@ class TestPandaScoreSyncIntegration:
         assert requested_games == {"lol", "cs2"}
         assert result is not None
 
+    @staticmethod
     @pytest.mark.asyncio
-    async def test_perform_pandascore_sync_includes_guild_enabled_games(self):
+    async def test_perform_pandascore_sync_includes_guild_enabled_games():
         from src.pandascore_sync import perform_pandascore_sync
 
         class _ResultWrapper:
@@ -461,8 +476,9 @@ class TestPandaScoreSyncIntegration:
 class TestPandaScoreClientRateLimiting:
     """Tests for rate limiting behavior."""
 
+    @staticmethod
     @pytest.mark.asyncio
-    async def test_fetch_matches_maps_cs2_to_csgo_route(self):
+    async def test_fetch_matches_maps_cs2_to_csgo_route():
         from src.pandascore_client import PandaScoreClient
 
         client = PandaScoreClient(api_key="test-key")
@@ -478,10 +494,11 @@ class TestPandaScoreClientRateLimiting:
         endpoint = mock_fetch.await_args.args[0]
         params = mock_fetch.await_args.args[1]
         assert endpoint == "/csgo/matches/upcoming"
-        assert params["filter[videogame_title]"] == "cs-2"
+        assert "filter[videogame_title]" not in params
 
+    @staticmethod
     @pytest.mark.asyncio
-    async def test_fetch_match_by_id_maps_cs2_to_csgo_route(self):
+    async def test_fetch_match_by_id_maps_cs2_to_csgo_route():
         from src.pandascore_client import PandaScoreClient
 
         client = PandaScoreClient(api_key="test-key")
@@ -495,9 +512,11 @@ class TestPandaScoreClientRateLimiting:
             await client.fetch_match_by_id(42, game="cs2")
 
         assert mock_request.await_args.args[0] == "/csgo/matches/42"
+        assert mock_request.await_args.kwargs.get("params") is None
 
+    @staticmethod
     @pytest.mark.asyncio
-    async def test_rate_limit_tracking(self):
+    async def test_rate_limit_tracking():
         """Test that rate limit tracking is initialized."""
         from src.pandascore_client import PandaScoreClient
 

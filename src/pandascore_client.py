@@ -28,9 +28,6 @@ MAX_PAGE_SIZE = 100
 GAME_ROUTE_MAP = {
     "cs2": "csgo",
 }
-GAME_QUERY_FILTERS = {
-    "cs2": {"filter[videogame_title]": "cs-2"},
-}
 
 # Rate limit: 1,000 requests/hour = ~16.7 req/min
 # We'll be conservative and track our usage
@@ -125,6 +122,14 @@ class PandaScoreClient:
     @staticmethod
     def _build_url(endpoint: str) -> str:
         return f"{BASE_URL}{endpoint}"
+
+    @staticmethod
+    def _resolve_game_route(
+        game: str,
+    ) -> Tuple[str, str]:
+        normalized = (game or "lol").lower()
+        route = GAME_ROUTE_MAP.get(normalized, normalized)
+        return route, normalized
 
     @staticmethod
     async def _do_request_once(
@@ -382,23 +387,6 @@ class PandaScoreClient:
             description = desc_template.format(page=opts.get("page", 1))
         return params, description
 
-    @staticmethod
-    def _resolve_game_route(game: str) -> str:
-        normalized = (game or "lol").lower()
-        return GAME_ROUTE_MAP.get(normalized, normalized)
-
-    @staticmethod
-    def _apply_game_filters(
-        params: Dict[str, Any], game: str
-    ) -> Dict[str, Any]:
-        normalized = (game or "lol").lower()
-        filters = GAME_QUERY_FILTERS.get(normalized, {})
-        if not filters:
-            return params
-        merged = dict(params)
-        merged.update(filters)
-        return merged
-
     async def fetch_matches(
         self,
         kind: str,
@@ -414,8 +402,7 @@ class PandaScoreClient:
         """
         opts = options or {}
         k = (kind or "").lower()
-        normalized_game = (game or "lol").lower()
-        route_game = self._resolve_game_route(normalized_game)
+        route_game, normalized_game = self._resolve_game_route(game)
 
         # Endpoint selection mapping
         mapping = {
@@ -445,7 +432,6 @@ class PandaScoreClient:
         params, description = self._prepare_fetch_context(
             k, opts, desc_template
         )
-        params = self._apply_game_filters(params, normalized_game)
 
         return await self._fetch_matches(endpoint, params, description)
 
@@ -553,12 +539,15 @@ class PandaScoreClient:
             Match object or None if not found
         """
         try:
-            route_game = self._resolve_game_route(game)
+            route_game, normalized_game = self._resolve_game_route(game)
             result = await self._make_request(
                 f"/{route_game}/matches/{match_id}"
             )
             logger.debug(
-                "Fetched match %d: status=%s", match_id, result.get("status")
+                "Fetched %s match %d: status=%s",
+                normalized_game,
+                match_id,
+                result.get("status"),
             )
             return result
         except PandaScoreError as e:

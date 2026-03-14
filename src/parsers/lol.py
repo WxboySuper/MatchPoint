@@ -26,7 +26,14 @@ def _team_display_name(team_info: Dict[str, Any]) -> str:
 
 
 def _match_game_slug(match_data: Dict[str, Any]) -> str:
-    return (match_data.get("videogame") or {}).get("slug") or "lol"
+    videogame = match_data.get("videogame") or {}
+    raw_slug = (videogame.get("slug") or "").lower()
+    title = str(match_data.get("videogame_title") or "").lower()
+    if raw_slug in {"counterstrike", "counter-strike", "cs2"}:
+        return "cs2"
+    if "counter-strike 2" in title or title == "cs2":
+        return "cs2"
+    return raw_slug or "lol"
 
 
 class LoLParser(PandaScoreParser):
