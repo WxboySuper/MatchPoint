@@ -227,7 +227,8 @@ class TestPandaScorePollingHelpers:
         assert team1_score == 2
         assert team2_score == 1
 
-    def test_determine_winner_from_pandascore(self):
+    @staticmethod
+    def test_determine_winner_from_pandascore():
         """Test determining winner from match data."""
         from src.pandascore_polling_core import (
             _determine_winner_from_pandascore,
