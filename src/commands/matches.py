@@ -13,6 +13,7 @@ from src.db import get_session
 from src.models import Contest, Match
 from src import crud
 from src.auth import is_admin
+from src.parsers.game_slug import game_display_name
 
 logger = logging.getLogger("esports-bot.commands.matches")
 
@@ -24,7 +25,10 @@ matches_group = app_commands.Group(
 STATUS_MAP = {
     "finished": "✅ Finished",
     "running": "🔴 Live",
+    "live": "🔴 Live",
+    "in_progress": "🔴 Live",
     "not_started": "⏳ Upcoming",
+    "scheduled": "⏳ Upcoming",
     "canceled": "❌ Canceled",
     "postponed": "🕒 Postponed",
 }
@@ -36,6 +40,7 @@ def _format_match_value(m: Match) -> str:
     )
     time_str = m.scheduled_time.strftime("%H:%M UTC")
     value = (
+        f"**Game:** {game_display_name(getattr(m, 'game', None))}\n"
         f"**Status:** {status_label}\n"
         f"**Time:** {time_str}\n"
         f"**Contest:** {m.contest.name if m.contest else 'Unknown'}"

@@ -284,3 +284,123 @@ async def test_fetch_upcoming_matches_includes_future_scheduled_statuses():
         matches = await live_messages._fetch_upcoming_matches("lol")
 
     assert [match.pandascore_id for match in matches] == [10]
+
+
+@pytest.mark.asyncio
+async def test_fetch_upcoming_matches_includes_legacy_lol_slug_rows():
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        contest = Contest(
+            pandascore_league_id=30,
+            pandascore_serie_id=40,
+            name="LCK Spring",
+            start_date=datetime.now(timezone.utc),
+            end_date=datetime.now(timezone.utc),
+        )
+        session.add(contest)
+        session.commit()
+        session.refresh(contest)
+
+        session.add(
+            Match(
+                contest_id=contest.id,
+                pandascore_id=20,
+                team1="T1",
+                team2="GEN",
+                status="not_started",
+                game="league-of-legends",
+                scheduled_time=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+        )
+        session.commit()
+
+    class _ResultWrapper:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return self._rows
+
+    class _AsyncSession:
+        @staticmethod
+        async def exec(stmt):
+            with Session(engine) as session:
+                return _ResultWrapper(list(session.exec(stmt).all()))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            _ = (exc_type, exc, tb)
+            return False
+
+    with patch.object(
+        live_messages,
+        "get_async_session",
+        return_value=_AsyncSession(),
+    ):
+        matches = await live_messages._fetch_upcoming_matches("lol")
+
+    assert [match.pandascore_id for match in matches] == [20]
+
+
+@pytest.mark.asyncio
+async def test_fetch_running_matches_accepts_live_status_aliases():
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        contest = Contest(
+            pandascore_league_id=50,
+            pandascore_serie_id=60,
+            name="LPL Spring",
+            start_date=datetime.now(timezone.utc),
+            end_date=datetime.now(timezone.utc),
+        )
+        session.add(contest)
+        session.commit()
+        session.refresh(contest)
+
+        session.add(
+            Match(
+                contest_id=contest.id,
+                pandascore_id=30,
+                team1="BLG",
+                team2="TES",
+                status="live",
+                game="league-of-legends",
+                scheduled_time=datetime.now(timezone.utc),
+            )
+        )
+        session.commit()
+
+    class _ResultWrapper:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return self._rows
+
+    class _AsyncSession:
+        @staticmethod
+        async def exec(stmt):
+            with Session(engine) as session:
+                return _ResultWrapper(list(session.exec(stmt).all()))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            _ = (exc_type, exc, tb)
+            return False
+
+    with patch.object(
+        live_messages,
+        "get_async_session",
+        return_value=_AsyncSession(),
+    ):
+        matches = await live_messages._fetch_running_matches("lol")
+
+    assert [match.pandascore_id for match in matches] == [30]

@@ -182,6 +182,20 @@ class TestLoLParser:
         assert result["best_of"] == 3
 
     @staticmethod
+    def test_extract_match_data_normalizes_lol_payload_slug(parser):
+        match_data = {
+            "id": 123456,
+            "scheduled_at": "2024-03-15T10:00:00Z",
+            "opponents": [],
+            "videogame": {"slug": "league-of-legends"},
+            "videogame_title": "League of Legends",
+        }
+
+        result = parser.extract_match_data(match_data, contest_id=1)
+        assert result is not None
+        assert result["game"] == "lol"
+
+    @staticmethod
     def test_extract_match_data_uses_payload_game_slug(parser):
         match_data = {
             "id": 123456,

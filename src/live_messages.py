@@ -18,6 +18,7 @@ from src.crud import (
 from src.db import get_async_session
 from src.models import Match, Result
 from src.parsers.factory import get_supported_game_slugs
+from src.parsers.game_slug import game_display_name, game_query_slugs
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +27,15 @@ UPCOMING_MATCH_LIMIT = 10
 RUNNING_MATCH_LIMIT = 25
 RESULTS_MATCH_LIMIT = 10
 RUNNING_MATCH_STALE_HOURS = 24
-NON_UPCOMING_STATUSES = ("running", "finished", "canceled", "postponed")
-GAME_DISPLAY_NAMES = {
-    "lol": "LoL",
-    "cs2": "CS2",
-}
+NON_UPCOMING_STATUSES = (
+    "running",
+    "live",
+    "in_progress",
+    "finished",
+    "canceled",
+    "postponed",
+)
+LIVE_MATCH_STATUSES = ("running", "live", "in_progress")
 
 
 @dataclass(frozen=True)
@@ -349,11 +354,12 @@ async def _build_live_message_embed(
 
 async def _fetch_upcoming_matches(game: str) -> list[Match]:
     now = datetime.now(timezone.utc)
+    game_slugs = game_query_slugs(game)
     async with get_async_session() as session:
         stmt = (
             select(Match)
             .options(selectinload(Match.contest))
-            .where(Match.game == game)
+            .where(Match.game.in_(game_slugs))
             .where(Match.scheduled_time >= now)
             .where(Match.status.notin_(NON_UPCOMING_STATUSES))
             .order_by(Match.scheduled_time, Match.id)
@@ -366,13 +372,14 @@ async def _fetch_running_matches(game: str) -> list[Match]:
     cutoff = datetime.now(timezone.utc) - timedelta(
         hours=RUNNING_MATCH_STALE_HOURS
     )
+    game_slugs = game_query_slugs(game)
     async with get_async_session() as session:
         stmt = (
             select(Match)
             .options(selectinload(Match.contest))
             .outerjoin(Result, Result.match_id == Match.id)
-            .where(Match.game == game)
-            .where(Match.status == "running")
+            .where(Match.game.in_(game_slugs))
+            .where(Match.status.in_(LIVE_MATCH_STATUSES))
             .where(Match.scheduled_time >= cutoff)
             .where(Result.id.is_(None))
             .order_by(Match.scheduled_time, Match.id)
@@ -382,12 +389,13 @@ async def _fetch_running_matches(game: str) -> list[Match]:
 
 
 async def _fetch_recent_results(game: str) -> list[tuple[Match, Result]]:
+    game_slugs = game_query_slugs(game)
     async with get_async_session() as session:
         stmt = (
             select(Match, Result)
             .join(Result, Result.match_id == Match.id)
             .options(selectinload(Match.contest))
-            .where(Match.game == game)
+            .where(Match.game.in_(game_slugs))
             .order_by(Match.scheduled_time.desc(), Match.id.desc())
             .limit(RESULTS_MATCH_LIMIT)
         )
@@ -508,4 +516,4 @@ def _best_of_suffix(match: Match) -> str:
 
 
 def _game_display_name(game: str) -> str:
-    return GAME_DISPLAY_NAMES.get(game, game.upper())
+    return game_display_name(game)

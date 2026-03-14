@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from src.parsers.base import PandaScoreParser
+from src.parsers.game_slug import normalize_game_slug
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +43,13 @@ def normalize_counter_strike_slug(
 
 def _match_game_slug(match_data: dict[str, Any]) -> str:
     videogame = match_data.get("videogame") or {}
-    raw_slug = (videogame.get("slug") or "").lower()
-    title = str(match_data.get("videogame_title") or "").lower()
-    return normalize_counter_strike_slug(raw_slug, title) or raw_slug or "cs2"
+    return (
+        normalize_game_slug(
+            videogame.get("slug"),
+            match_data.get("videogame_title"),
+        )
+        or "cs2"
+    )
 
 
 class CS2Parser(PandaScoreParser):
