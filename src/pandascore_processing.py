@@ -37,13 +37,16 @@ class PandaScoreSyncContext:
 
 
 async def _process_teams_from_match(
-    match_data: Dict[str, Any], ctx: PandaScoreSyncContext
+    match_data: Dict[str, Any],
+    game: str,
+    ctx: PandaScoreSyncContext,
 ) -> None:
     opponents = match_data.get("opponents", [])
 
     for opponent in opponents:
         team_data = ctx.parser.extract_team_data(opponent)
         if team_data and team_data.get("pandascore_id"):
+            team_data["game"] = game
             team = await upsert_team_by_pandascore(ctx.db_session, team_data)
             if team:
                 ctx.summary["teams"] += 1
@@ -87,11 +90,10 @@ async def _process_single_match(
     if not contest:
         return None
 
-    await _process_teams_from_match(match_data, ctx)
-
     match_info = ctx.parser.extract_match_data(match_data, contest.id)
     if not match_info:
         return None
+    await _process_teams_from_match(match_data, match_info["game"], ctx)
 
     match, is_new, time_changed, old_time = await upsert_match_by_pandascore(
         ctx.db_session, match_info
@@ -149,10 +151,11 @@ async def _detect_match_result(
     )
 
     try:
-        result = await save_result_and_update_picks(
-            ctx.db_session, match, winner_name, score_str
-        )
-        await ctx.db_session.flush()
+        async with ctx.db_session.begin_nested():
+            result = await save_result_and_update_picks(
+                ctx.db_session, match, winner_name, score_str
+            )
+            await ctx.db_session.flush()
         ctx.notifications.append((match.id, result.id))
     except Exception:
         logger.exception("Failed to save result for match %s", match.id)

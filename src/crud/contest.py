@@ -79,17 +79,18 @@ async def upsert_contest_by_pandascore(
         return None
 
     try:
-        contest = await get_contest_by_pandascore_ids(
-            session, league_id, serie_id
-        )
+        async with session.begin_nested():
+            contest = await get_contest_by_pandascore_ids(
+                session, league_id, serie_id
+            )
 
-        if contest:
-            _update_contest_from_data(contest, contest_data)
-        else:
-            contest = _create_contest_from_data(contest_data)
+            if contest:
+                _update_contest_from_data(contest, contest_data)
+            else:
+                contest = _create_contest_from_data(contest_data)
 
-        session.add(contest)
-        await session.flush()
+            session.add(contest)
+            await session.flush()
         logger.info("Upserted contest: %s (ID: %s)", contest.name, contest.id)
         return contest
     except Exception:

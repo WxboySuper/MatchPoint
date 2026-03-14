@@ -50,39 +50,40 @@ async def upsert_match(
         return None, False
 
     try:
-        existing_match = await session.exec(
-            select(Match)
-            .where(Match.leaguepedia_id == leaguepedia_id)
-            .options(selectinload(Match.result))
-        )
-        match = existing_match.first()
-        time_changed = False
+        async with session.begin_nested():
+            existing_match = await session.exec(
+                select(Match)
+                .where(Match.leaguepedia_id == leaguepedia_id)
+                .options(selectinload(Match.result))
+            )
+            match = existing_match.first()
+            time_changed = False
 
-        if match:
-            # Update existing match
-            logger.info("Updating existing match ID: %s", match.id)
-            match.team1 = match_data["team1"]
-            match.team2 = match_data["team2"]
-            match.best_of = match_data.get("best_of")
-            original_time = match.scheduled_time
-            new_time = match_data["scheduled_time"]
-            if original_time != new_time:
-                logger.info(
-                    "Match %s time changed from %s to %s",
-                    match.id,
-                    original_time,
-                    new_time,
-                )
-                time_changed = True
-            match.scheduled_time = new_time
-        else:
-            # Create new match
-            logger.info("Creating new match: %s", match_data)
-            match = Match(**match_data)
-            time_changed = True  # It's a new match, so schedule it
+            if match:
+                # Update existing match
+                logger.info("Updating existing match ID: %s", match.id)
+                match.team1 = match_data["team1"]
+                match.team2 = match_data["team2"]
+                match.best_of = match_data.get("best_of")
+                original_time = match.scheduled_time
+                new_time = match_data["scheduled_time"]
+                if original_time != new_time:
+                    logger.info(
+                        "Match %s time changed from %s to %s",
+                        match.id,
+                        original_time,
+                        new_time,
+                    )
+                    time_changed = True
+                match.scheduled_time = new_time
+            else:
+                # Create new match
+                logger.info("Creating new match: %s", match_data)
+                match = Match(**match_data)
+                time_changed = True  # It's a new match, so schedule it
 
-        session.add(match)
-        await session.flush()  # Flush to get the match.id if it's new
+            session.add(match)
+            await session.flush()  # Flush to get the match.id if it's new
         logger.info("Upserted match ID: %s", match.id)
 
         return match, time_changed
@@ -119,25 +120,26 @@ async def upsert_match_by_pandascore(
         return None, False, False, None
 
     try:
-        result = await session.exec(
-            select(Match)
-            .where(Match.pandascore_id == pandascore_id)
-            .options(selectinload(Match.result))
-        )
-        match = result.first()
-        is_new = False
-        original_time = None
-
-        if match:
-            time_changed, original_time = _update_match_from_data(
-                match, match_data
+        async with session.begin_nested():
+            result = await session.exec(
+                select(Match)
+                .where(Match.pandascore_id == pandascore_id)
+                .options(selectinload(Match.result))
             )
-        else:
-            match, time_changed = _create_match_from_data(match_data)
-            is_new = True
+            match = result.first()
+            is_new = False
+            original_time = None
 
-        session.add(match)
-        await session.flush()
+            if match:
+                time_changed, original_time = _update_match_from_data(
+                    match, match_data
+                )
+            else:
+                match, time_changed = _create_match_from_data(match_data)
+                is_new = True
+
+            session.add(match)
+            await session.flush()
         logger.info(
             "Upserted match ID: %s (PandaScore: %s)", match.id, pandascore_id
         )
