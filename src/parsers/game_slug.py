@@ -1,6 +1,22 @@
 from typing import Optional
 
 
+def _normalize_lol_slug(raw_slug: str, raw_title: str) -> Optional[str]:
+    if raw_slug in {"lol", "league-of-legends", "leagueoflegends"}:
+        return "lol"
+    if "league of legends" in raw_title:
+        return "lol"
+    return None
+
+
+def _normalize_cs2_slug(raw_slug: str, raw_title: str) -> Optional[str]:
+    if raw_slug in {"cs2", "csgo", "counterstrike", "counter-strike"}:
+        return "cs2"
+    if "counter-strike 2" in raw_title or raw_title == "cs2":
+        return "cs2"
+    return None
+
+
 def normalize_game_slug(
     slug: Optional[str],
     title: Optional[str] = None,
@@ -8,17 +24,13 @@ def normalize_game_slug(
     raw_slug = (slug or "").strip().lower()
     raw_title = (title or "").strip().lower()
 
-    if raw_slug in {"lol", "league-of-legends", "leagueoflegends"}:
-        return "lol"
+    normalized_lol = _normalize_lol_slug(raw_slug, raw_title)
+    if normalized_lol:
+        return normalized_lol
 
-    if raw_slug in {"cs2", "csgo", "counterstrike", "counter-strike"}:
-        return "cs2"
-
-    if "league of legends" in raw_title:
-        return "lol"
-
-    if "counter-strike 2" in raw_title or raw_title == "cs2":
-        return "cs2"
+    normalized_cs2 = _normalize_cs2_slug(raw_slug, raw_title)
+    if normalized_cs2:
+        return normalized_cs2
 
     return raw_slug or None
 

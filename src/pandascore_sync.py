@@ -37,9 +37,10 @@ from src.pandascore_utils import (
     safe_schedule,
 )
 from src.parsers.factory import get_parser, get_supported_game_slugs
-from src.parsers.game_slug import normalize_game_slug
+from src.parsers.game_slug import game_query_slugs, normalize_game_slug
 
 logger = logging.getLogger(__name__)
+RUNNING_MATCH_STATUSES = ("running", "live", "in_progress")
 
 
 def _normalize_enabled_game(
@@ -281,11 +282,13 @@ async def _fetch_matches_for_sync(
 
 
 async def _reconcile_finished_matches_for_game(game_slug: str) -> None:
+    normalized_game = normalize_game_slug(game_slug) or game_slug
+    game_slugs = game_query_slugs(normalized_game)
     async with get_async_session() as db_session:
         stmt = (
             select(Match)
-            .where(Match.game == game_slug)
-            .where(Match.status == "running")
+            .where(Match.game.in_(game_slugs))
+            .where(Match.status.in_(RUNNING_MATCH_STATUSES))
         )
         running_matches = list((await db_session.exec(stmt)).all())
 
@@ -294,10 +297,14 @@ async def _reconcile_finished_matches_for_game(game_slug: str) -> None:
         if not pandascore_id:
             continue
 
-        match_data = await _fetch_pandascore_match(pandascore_id, game_slug)
+        match_data = await _fetch_pandascore_match(
+            pandascore_id, normalized_game
+        )
         if not match_data:
             continue
-        await fetch_and_update_match_result(pandascore_id, game_slug=game_slug)
+        await fetch_and_update_match_result(
+            pandascore_id, game_slug=normalized_game
+        )
 
 
 async def _process_matches_and_commit(

@@ -32,6 +32,7 @@ STATUS_MAP = {
     "canceled": "❌ Canceled",
     "postponed": "🕒 Postponed",
 }
+LIVE_STATUSES = ("running", "live", "in_progress")
 
 
 def _format_match_value(m: Match) -> str:
@@ -50,7 +51,7 @@ def _format_match_value(m: Match) -> str:
     if m.result:
         score_str = f" ({m.result.score})" if m.result.score else ""
         value += f"\n**Result:** **{m.result.winner}** won{score_str}"
-    elif m.status == "running" and m.last_announced_score:
+    elif m.status in LIVE_STATUSES and m.last_announced_score:
         value += f"\n**Current Score:** {m.last_announced_score}"
     return value
 
