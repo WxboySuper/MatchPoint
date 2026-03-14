@@ -170,12 +170,12 @@ class TestLoLParser:
             "id": 123456,
             "scheduled_at": "2024-03-15T10:00:00Z",
             "opponents": [],
-            "videogame": {"slug": "cs2"},
+            "videogame": {"slug": "lol"},
         }
 
         result = parser.extract_match_data(match_data, contest_id=1)
         assert result is not None
-        assert result["game"] == "cs2"
+        assert result["game"] == "lol"
 
     def test_extract_match_data_missing_opponents(self, parser):
         """Test extracting match data with fewer than 2 opponents."""
@@ -289,6 +289,21 @@ class TestCS2Parser:
         assert result is not None
         assert result["game"] == "cs2"
 
+    @staticmethod
+    def test_extract_match_data_normalizes_counterstrike_payload(parser):
+        match_data = {
+            "id": 987654,
+            "scheduled_at": "2024-03-15T10:00:00Z",
+            "status": "not_started",
+            "opponents": [],
+            "videogame": {"slug": "counterstrike"},
+            "videogame_title": "Counter-Strike 2",
+        }
+
+        result = parser.extract_match_data(match_data, contest_id=1)
+        assert result is not None
+        assert result["game"] == "cs2"
+
 
 class TestPandaScoreSyncIntegration:
     """Integration tests for PandaScore sync (mocked API)."""
@@ -390,9 +405,96 @@ class TestPandaScoreSyncIntegration:
         assert requested_games == {"lol", "cs2"}
         assert result is not None
 
+    @pytest.mark.asyncio
+    async def test_perform_pandascore_sync_includes_guild_enabled_games(self):
+        from src.pandascore_sync import perform_pandascore_sync
+
+        class _ResultWrapper:
+            def __init__(self, rows):
+                self._rows = rows
+
+            def all(self):
+                return self._rows
+
+        class _AsyncSession:
+            @staticmethod
+            async def exec(stmt):
+                _ = stmt
+                return _ResultWrapper(["cs2"])
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                _ = (exc_type, exc, tb)
+                return False
+
+        async def _fetch_matches(kind, options=None, game="lol"):
+            _ = (kind, options)
+            return []
+
+        with patch(
+            "src.pandascore_sync.get_async_session",
+            return_value=_AsyncSession(),
+        ), patch(
+            "src.pandascore_sync.pandascore_client.fetch_matches",
+            new_callable=AsyncMock,
+            side_effect=_fetch_matches,
+        ) as mock_fetch, patch(
+            "src.pandascore_sync._run_post_sync_actions",
+            new_callable=AsyncMock,
+        ), patch(
+            "src.pandascore_sync._reconcile_finished_matches_for_game",
+            new_callable=AsyncMock,
+        ), patch(
+            "src.config.DEFAULT_GAMES",
+            ["lol"],
+        ):
+            await perform_pandascore_sync()
+
+        requested_games = {
+            call.kwargs["game"] for call in mock_fetch.await_args_list
+        }
+        assert requested_games == {"lol", "cs2"}
+
 
 class TestPandaScoreClientRateLimiting:
     """Tests for rate limiting behavior."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_matches_maps_cs2_to_csgo_route(self):
+        from src.pandascore_client import PandaScoreClient
+
+        client = PandaScoreClient(api_key="test-key")
+
+        with patch.object(
+            client,
+            "_fetch_matches",
+            new_callable=AsyncMock,
+            return_value=[],
+        ) as mock_fetch:
+            await client.fetch_matches("upcoming", game="cs2")
+
+        endpoint = mock_fetch.await_args.args[0]
+        params = mock_fetch.await_args.args[1]
+        assert endpoint == "/csgo/matches/upcoming"
+        assert params["filter[videogame_title]"] == "cs-2"
+
+    @pytest.mark.asyncio
+    async def test_fetch_match_by_id_maps_cs2_to_csgo_route(self):
+        from src.pandascore_client import PandaScoreClient
+
+        client = PandaScoreClient(api_key="test-key")
+
+        with patch.object(
+            client,
+            "_make_request",
+            new_callable=AsyncMock,
+            return_value={},
+        ) as mock_request:
+            await client.fetch_match_by_id(42, game="cs2")
+
+        assert mock_request.await_args.args[0] == "/csgo/matches/42"
 
     @pytest.mark.asyncio
     async def test_rate_limit_tracking(self):
