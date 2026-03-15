@@ -6,37 +6,52 @@ from src.commands.pick import PickView
 from src.models import Match, Contest
 
 
-@pytest.fixture
-def mock_match():
+def _build_match(
+    *,
+    match_id: int,
+    team1: str,
+    team2: str,
+    contest_name: str,
+    days_from_now: int,
+    best_of: int,
+) -> Match:
+    now = datetime.now(timezone.utc)
     return Match(
-        id=1,
-        team1="T1",
-        team2="T2",
-        scheduled_time=datetime.now(timezone.utc) + timedelta(days=1),
+        id=match_id,
+        team1=team1,
+        team2=team2,
+        scheduled_time=now + timedelta(days=days_from_now),
         contest=Contest(
-            name="Worlds",
-            start_date=datetime.now(timezone.utc),
-            end_date=datetime.now(timezone.utc),
+            name=contest_name,
+            start_date=now,
+            end_date=now,
         ),
-        best_of=1,
+        best_of=best_of,
         contest_id=1,
     )
 
 
 @pytest.fixture
+def mock_match():
+    return _build_match(
+        match_id=1,
+        team1="T1",
+        team2="T2",
+        contest_name="Worlds",
+        days_from_now=1,
+        best_of=1,
+    )
+
+
+@pytest.fixture
 def mock_matches(mock_match):
-    m2 = Match(
-        id=2,
+    m2 = _build_match(
+        match_id=2,
         team1="G2",
         team2="FNC",
-        scheduled_time=datetime.now(timezone.utc) + timedelta(days=2),
-        contest=Contest(
-            name="LEC",
-            start_date=datetime.now(timezone.utc),
-            end_date=datetime.now(timezone.utc),
-        ),
+        contest_name="LEC",
+        days_from_now=2,
         best_of=3,
-        contest_id=1,
     )
     return [mock_match, m2]
 
