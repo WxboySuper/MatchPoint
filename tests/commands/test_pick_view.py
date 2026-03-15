@@ -1,32 +1,37 @@
+from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone, timedelta
+
 import discord
 from src.commands.pick import PickView
 from src.models import Match, Contest
 
 
-def _build_match(
-    *,
-    match_id: int,
-    team1: str,
-    team2: str,
-    contest_name: str,
-    days_from_now: int,
-    best_of: int,
-) -> Match:
+@dataclass(frozen=True)
+class MatchFixtureCase:
+    match_id: int
+    team1: str
+    team2: str
+    contest_name: str
+    days_from_now: int
+    best_of: int
+
+
+def _build_match(case: MatchFixtureCase) -> Match:
     now = datetime.now(timezone.utc)
     return Match(
-        id=match_id,
-        team1=team1,
-        team2=team2,
-        scheduled_time=now + timedelta(days=days_from_now),
+        id=case.match_id,
+        team1=case.team1,
+        team2=case.team2,
+        scheduled_time=now + timedelta(days=case.days_from_now),
         contest=Contest(
-            name=contest_name,
+            name=case.contest_name,
             start_date=now,
             end_date=now,
         ),
-        best_of=best_of,
+        best_of=case.best_of,
         contest_id=1,
     )
 
@@ -34,24 +39,28 @@ def _build_match(
 @pytest.fixture
 def mock_match():
     return _build_match(
-        match_id=1,
-        team1="T1",
-        team2="T2",
-        contest_name="Worlds",
-        days_from_now=1,
-        best_of=1,
+        MatchFixtureCase(
+            match_id=1,
+            team1="T1",
+            team2="T2",
+            contest_name="Worlds",
+            days_from_now=1,
+            best_of=1,
+        )
     )
 
 
 @pytest.fixture
 def mock_matches(mock_match):
     m2 = _build_match(
-        match_id=2,
-        team1="G2",
-        team2="FNC",
-        contest_name="LEC",
-        days_from_now=2,
-        best_of=3,
+        MatchFixtureCase(
+            match_id=2,
+            team1="G2",
+            team2="FNC",
+            contest_name="LEC",
+            days_from_now=2,
+            best_of=3,
+        )
     )
     return [mock_match, m2]
 
