@@ -72,6 +72,7 @@ class Contest(SQLModel, table=True):
     pandascore_serie_id: Optional[int] = Field(default=None, index=True)
     name: str = Field(index=True)
     image_url: Optional[str] = Field(default=None)
+    tier: Optional[str] = Field(default=None, index=True)
     __table_args__ = (
         sa.UniqueConstraint(
             "pandascore_league_id",

@@ -139,7 +139,35 @@ async def test_create_matches_embed_includes_game_label(mock_interaction):
     )
 
     assert embed.fields
-    assert "**Game:** LoL" in embed.fields[0].value
+    assert "LCK Spring • LoL" in embed.fields[0].value
+
+
+@pytest.mark.asyncio
+async def test_create_matches_embed_includes_tier_when_present(
+    mock_interaction,
+):
+    contest = MagicMock()
+    contest.name = "First Stand"
+    contest.tier = "A"
+    match = Match(
+        id=1,
+        contest_id=1,
+        team1="T1",
+        team2="HLE",
+        scheduled_time=datetime.now(timezone.utc),
+        status="not_started",
+        game="lol",
+        best_of=5,
+    )
+    match.contest = contest
+    match.result = None
+
+    embed = await matches.create_matches_embed(
+        "Test Matches", [match], mock_interaction
+    )
+
+    assert embed.fields
+    assert "First Stand • A-tier • LoL • Bo5" in embed.fields[0].value
 
 
 @pytest.mark.asyncio

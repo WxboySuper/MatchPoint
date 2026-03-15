@@ -11,9 +11,14 @@ from sqlmodel import Session
 
 from src.db import get_session
 from src.models import Contest, Match
+from src.match_display import (
+    format_match_heading,
+    format_match_metadata,
+    format_match_result_or_score,
+    format_match_time,
+)
 from src import crud
 from src.auth import is_admin
-from src.parsers.game_slug import game_display_name
 
 logger = logging.getLogger("esports-bot.commands.matches")
 
@@ -21,39 +26,16 @@ matches_group = app_commands.Group(
     name="matches", description="Commands for viewing and managing matches."
 )
 
-# Display helpers for matches embed
-STATUS_MAP = {
-    "finished": "✅ Finished",
-    "running": "🔴 Live",
-    "live": "🔴 Live",
-    "in_progress": "🔴 Live",
-    "not_started": "⏳ Upcoming",
-    "scheduled": "⏳ Upcoming",
-    "canceled": "❌ Canceled",
-    "postponed": "🕒 Postponed",
-}
-LIVE_STATUSES = ("running", "live", "in_progress")
-
 
 def _format_match_value(m: Match) -> str:
-    status_label = STATUS_MAP.get(
-        m.status, m.status.capitalize() if m.status else "Upcoming"
-    )
-    time_str = m.scheduled_time.strftime("%H:%M UTC")
-    value = (
-        f"**Game:** {game_display_name(getattr(m, 'game', None))}\n"
-        f"**Status:** {status_label}\n"
-        f"**Time:** {time_str}\n"
-        f"**Contest:** {m.contest.name if m.contest else 'Unknown'}"
-    )
-    if m.best_of:
-        value += f"\n**Format:** Best of {m.best_of}"
-    if m.result:
-        score_str = f" ({m.result.score})" if m.result.score else ""
-        value += f"\n**Result:** **{m.result.winner}** won{score_str}"
-    elif m.status in LIVE_STATUSES and m.last_announced_score:
-        value += f"\n**Current Score:** {m.last_announced_score}"
-    return value
+    lines = [
+        format_match_metadata(m),
+        format_match_time(m),
+    ]
+    result_or_score = format_match_result_or_score(m)
+    if result_or_score:
+        lines.append(result_or_score)
+    return "\n".join(lines)
 
 
 def _paginate_matches(ms: list[Match], info: tuple[int, int] | None):
@@ -202,7 +184,7 @@ async def create_matches_embed(
 
     for m in display_matches:
         embed.add_field(
-            name=f"{m.team1} vs {m.team2}",
+            name=format_match_heading(m),
             value=_format_match_value(m),
             inline=False,
         )

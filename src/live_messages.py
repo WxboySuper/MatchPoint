@@ -19,6 +19,7 @@ from src.db import get_async_session
 from src.models import Match, Result
 from src.parsers.factory import get_supported_game_slugs
 from src.parsers.game_slug import game_display_name, game_query_slugs
+from src.contest_tier import display_contest_tier
 
 logger = logging.getLogger(__name__)
 
@@ -506,7 +507,11 @@ def _format_result_entry(entry: tuple[Match, Result]) -> str:
 
 def _contest_name(match: Match) -> str:
     contest = getattr(match, "contest", None)
-    return getattr(contest, "name", "Unknown contest")
+    name = getattr(contest, "name", "Unknown contest")
+    tier = display_contest_tier(getattr(contest, "tier", None))
+    if tier:
+        return f"{name} • {tier}"
+    return name
 
 
 def _best_of_suffix(match: Match) -> str:
