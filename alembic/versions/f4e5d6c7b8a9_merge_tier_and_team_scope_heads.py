@@ -18,8 +18,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    pass
+    # Merge revision; schema changes live in the parent migrations.
+    return None
 
 
 def downgrade() -> None:
-    pass
+    # Merge revision; schema changes live in the parent migrations.
+    return None
