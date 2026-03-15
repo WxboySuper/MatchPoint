@@ -4,6 +4,7 @@ Unit tests for PandaScore client and sync logic.
 
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -559,13 +560,14 @@ class TestPandaScoreSyncIntegration:
         from sqlmodel.ext.asyncio.session import AsyncSession
         from sqlalchemy.ext.asyncio import create_async_engine
 
-        from src.crud.contest import upsert_contest_by_pandascore
+        from src.crud.contest import (
+            get_contest_by_pandascore_ids,
+            upsert_contest_by_pandascore,
+        )
 
-        db_path = Path("data") / "contest-tier-test.db"
-        db_path.parent.mkdir(exist_ok=True)
-        if db_path.exists():
-            db_path.unlink()
-
+        temp_root = Path(".pytest_tmp")
+        temp_root.mkdir(exist_ok=True)
+        db_path = temp_root / f"contest-tier-{uuid4().hex}.db"
         sync_engine = create_engine(f"sqlite:///{db_path}")
         SQLModel.metadata.create_all(sync_engine)
         async_engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
@@ -588,7 +590,17 @@ class TestPandaScoreSyncIntegration:
                     },
                 )
                 assert contest is not None
-                assert contest.tier == "S"
+                await session.commit()
+
+            async with AsyncSession(async_engine) as session:
+                persisted = await get_contest_by_pandascore_ids(
+                    session,
+                    1,
+                    2,
+                )
+
+            assert persisted is not None
+            assert persisted.tier == "S"
         finally:
             sync_engine.dispose()
             await async_engine.dispose()

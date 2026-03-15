@@ -27,12 +27,13 @@ async def upsert_contest(
 
     The function upserts a Contest by `leaguepedia_id`, creating a new
     record if none exists or updating the existing record. Only
-    `name`, `start_date`, and `end_date` are considered for updates.
+    `name`, `start_date`, `end_date`, and `tier` are considered for
+    updates.
 
     Parameters:
         contest_data (dict): Mapping of contest fields. Must include
-            `leaguepedia_id`. May include `name`, `start_date`, and
-            `end_date`.
+            `leaguepedia_id`. May include `name`, `start_date`,
+            `end_date`, and `tier`.
 
     Returns:
         Contest or None: The created or updated Contest, or `None` if
@@ -59,7 +60,7 @@ async def upsert_contest_by_pandascore(
     Parameters:
         contest_data (dict): Mapping of contest fields. Must include
             `pandascore_league_id` and `pandascore_serie_id`. May include
-            `name`, `start_date`, and `end_date`.
+            `name`, `start_date`, `end_date`, and `tier`.
 
     Returns:
         Contest or None: The created or updated Contest, or None if
