@@ -7,8 +7,7 @@ Create Date: 2026-03-15
 
 from collections.abc import Sequence
 
-
-revision = "f4e5d6c7b8a9"
+revision: str = "f4e5d6c7b8a9"
 down_revision: str | Sequence[str] | None = (
     "7a4d1f2c9b8e",
     "8f7c6b5a4d3e",
@@ -18,10 +17,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Merge revision; schema changes live in the parent migrations.
-    return None
+    """Merge the contest tier and team scope migration branches."""
 
 
 def downgrade() -> None:
-    # Merge revision; schema changes live in the parent migrations.
-    return None
+    """Split the contest tier and team scope migration branches."""
