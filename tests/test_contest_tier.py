@@ -40,6 +40,31 @@ def test_lol_parser_extract_contest_data_includes_tier():
     assert result["tier"] == "S"
 
 
+def test_lol_parser_extract_contest_data_uses_tournament_tier():
+    parser = LoLParser()
+    match_data = {
+        "league": {
+            "id": 4553,
+            "name": "LCK Challengers League",
+            "image_url": "https://cdn.pandascore.co/images/league/image.png",
+        },
+        "serie": {
+            "id": 8889,
+            "name": "Kickoff",
+            "full_name": "Kickoff 2025",
+        },
+        "tournament": {
+            "id": 15744,
+            "name": "Playoffs",
+            "tier": "c",
+        },
+        "scheduled_at": "2025-02-17T09:00:00Z",
+    }
+
+    result = parser.extract_contest_data(match_data)
+    assert result["tier"] == "C"
+
+
 @pytest.mark.asyncio
 async def test_upsert_contest_by_pandascore_persists_tier():
     temp_root = Path(".pytest_tmp")
