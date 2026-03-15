@@ -119,36 +119,24 @@ async def test_matches_view_by_day_no_matches(
 
 
 @pytest.mark.asyncio
-async def test_create_matches_embed_includes_game_label(mock_interaction):
-    contest = MagicMock()
-    contest.name = "LCK Spring"
-    match = Match(
-        id=1,
-        contest_id=1,
-        team1="T1",
-        team2="HLE",
-        scheduled_time=datetime.now(timezone.utc),
-        status="not_started",
-        game="league-of-legends",
-    )
-    match.contest = contest
-    match.result = None
-
-    embed = await matches.create_matches_embed(
-        "Test Matches", [match], mock_interaction
-    )
-
-    assert embed.fields
-    assert "LCK Spring • LoL" in embed.fields[0].value
-
-
-@pytest.mark.asyncio
-async def test_create_matches_embed_includes_tier_when_present(
+@pytest.mark.parametrize(
+    "contest_name,contest_tier,game,best_of,expected_text",
+    [
+        ("LCK Spring", None, "league-of-legends", None, "LCK Spring • LoL"),
+        ("First Stand", "A", "lol", 5, "First Stand • A-tier • LoL • Bo5"),
+    ],
+)
+async def test_create_matches_embed_metadata(
     mock_interaction,
+    contest_name,
+    contest_tier,
+    game,
+    best_of,
+    expected_text,
 ):
     contest = MagicMock()
-    contest.name = "First Stand"
-    contest.tier = "A"
+    contest.name = contest_name
+    contest.tier = contest_tier
     match = Match(
         id=1,
         contest_id=1,
@@ -156,8 +144,8 @@ async def test_create_matches_embed_includes_tier_when_present(
         team2="HLE",
         scheduled_time=datetime.now(timezone.utc),
         status="not_started",
-        game="lol",
-        best_of=5,
+        game=game,
+        best_of=best_of,
     )
     match.contest = contest
     match.result = None
@@ -167,7 +155,7 @@ async def test_create_matches_embed_includes_tier_when_present(
     )
 
     assert embed.fields
-    assert "First Stand • A-tier • LoL • Bo5" in embed.fields[0].value
+    assert expected_text in embed.fields[0].value
 
 
 @pytest.mark.asyncio

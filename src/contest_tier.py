@@ -9,6 +9,18 @@ TIER_DISPLAY = {
 }
 
 
+def _normalize_tier_prefix(value: str, prefix: str) -> Optional[str]:
+    if not value.startswith(prefix):
+        return None
+    return _normalize_tier_key(value.removeprefix(prefix).lstrip("-:"))
+
+
+def _normalize_tier_key(value: str) -> Optional[str]:
+    if value in TIER_DISPLAY:
+        return value
+    return None
+
+
 def normalize_contest_tier(raw_tier: Any) -> Optional[str]:
     if raw_tier is None:
         return None
@@ -18,18 +30,16 @@ def normalize_contest_tier(raw_tier: Any) -> Optional[str]:
         return None
 
     direct = value.replace(" ", "")
-    if direct in TIER_DISPLAY:
-        return direct
+    normalized = _normalize_tier_key(direct)
+    if normalized:
+        return normalized
 
     if direct.endswith("-TIER"):
-        base = direct.removesuffix("-TIER")
-        if base in TIER_DISPLAY:
-            return base
+        return _normalize_tier_key(direct.removesuffix("-TIER"))
 
-    if direct.startswith("TIER"):
-        base = direct.removeprefix("TIER").lstrip("-:")
-        if base in TIER_DISPLAY:
-            return base
+    normalized = _normalize_tier_prefix(direct, "TIER")
+    if normalized:
+        return normalized
 
     return None
 
