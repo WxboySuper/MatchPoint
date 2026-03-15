@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Tuple
 
 from src.parsers.base import PandaScoreParser
+from src.contest_tier import extract_contest_tier
 from src.parsers.game_slug import normalize_game_slug
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,7 @@ class LoLParser(PandaScoreParser):
             "start_date": scheduled_at or now,
             "end_date": scheduled_at or now,
             "image_url": league.get("image_url"),
+            "tier": extract_contest_tier(match_data),
         }
 
     @staticmethod

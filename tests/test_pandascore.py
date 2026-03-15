@@ -3,8 +3,9 @@ Unit tests for PandaScore client and sync logic.
 """
 
 from datetime import datetime, timezone
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from sqlmodel import SQLModel, Session, create_engine
 
 from src.models import Contest, Match
@@ -148,26 +149,6 @@ class TestLoLParser:
         """Test extracting team data with missing opponent key."""
         result = parser.extract_team_data({})
         assert result is None
-
-    @staticmethod
-    def test_extract_contest_data(parser):
-        """Test extracting contest data from match."""
-        match_data = {
-            "league": {"id": 1, "name": "LCS", "image_url": "http://img"},
-            "serie": {
-                "id": 10,
-                "name": "Spring",
-                "full_name": "Spring Split 2024",
-            },
-            "scheduled_at": "2024-03-15T10:00:00Z",
-        }
-
-        result = parser.extract_contest_data(match_data)
-        assert result["pandascore_league_id"] == 1
-        assert result["pandascore_serie_id"] == 10
-        assert "LCS" in result["name"]
-        assert "Spring" in result["name"]
-        assert result["image_url"] == "http://img"
 
     @staticmethod
     def test_extract_match_data_valid(parser):

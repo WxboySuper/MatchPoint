@@ -1,44 +1,70 @@
+from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone, timedelta
+
 import discord
 from src.commands.pick import PickView
 from src.models import Match, Contest
 
 
-@pytest.fixture
-def mock_match():
+@dataclass(frozen=True)
+class MatchFixtureCase:
+    match_id: int
+    team1: str
+    team2: str
+    contest_name: str
+    days_from_now: int
+    best_of: int
+
+
+def _build_match(case: MatchFixtureCase) -> Match:
+    now = datetime.now(timezone.utc)
     return Match(
-        id=1,
-        team1="T1",
-        team2="T2",
-        scheduled_time=datetime.now(timezone.utc) + timedelta(days=1),
+        id=case.match_id,
+        team1=case.team1,
+        team2=case.team2,
+        scheduled_time=now + timedelta(days=case.days_from_now),
         contest=Contest(
-            name="Worlds",
-            start_date=datetime.now(timezone.utc),
-            end_date=datetime.now(timezone.utc),
+            name=case.contest_name,
+            start_date=now,
+            end_date=now,
         ),
-        best_of=1,
+        best_of=case.best_of,
         contest_id=1,
     )
 
 
 @pytest.fixture
-def mock_matches(mock_match):
-    m2 = Match(
-        id=2,
-        team1="G2",
-        team2="FNC",
-        scheduled_time=datetime.now(timezone.utc) + timedelta(days=2),
-        contest=Contest(
-            name="LEC",
-            start_date=datetime.now(timezone.utc),
-            end_date=datetime.now(timezone.utc),
+def mock_matches():
+    return [
+        _build_match(
+            MatchFixtureCase(
+                match_id=1,
+                team1="T1",
+                team2="T2",
+                contest_name="Worlds",
+                days_from_now=1,
+                best_of=1,
+            )
         ),
-        best_of=3,
-        contest_id=1,
-    )
-    return [mock_match, m2]
+        _build_match(
+            MatchFixtureCase(
+                match_id=2,
+                team1="G2",
+                team2="FNC",
+                contest_name="LEC",
+                days_from_now=2,
+                best_of=3,
+            )
+        ),
+    ]
+
+
+@pytest.fixture
+def mock_match(mock_matches):
+    return mock_matches[0]
 
 
 @pytest.mark.asyncio
@@ -131,3 +157,16 @@ async def test_pick_view_locked_match(mock_matches):
     pick_field = next((f for f in embed.fields if f.name == "Your Pick"), None)
     assert pick_field is not None
     assert "(Locked)" in pick_field.value
+
+
+@pytest.mark.asyncio
+async def test_pick_view_embed_uses_compact_match_metadata(mock_match):
+    mock_match.game = "lol"
+    mock_match.contest.tier = "S"
+
+    view = PickView(matches=[mock_match], user_picks={}, user_id=123)
+    embed = view.get_embed()
+
+    assert "**T1 vs T2 — ⏳ Upcoming**" in embed.description
+    assert "Worlds • S-tier • LoL • Bo1" in embed.description
+    assert "<t:" in embed.description

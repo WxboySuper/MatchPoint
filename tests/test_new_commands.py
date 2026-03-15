@@ -1,13 +1,25 @@
 # tests/test_new_commands.py
 
+from dataclasses import dataclass
+from datetime import datetime, timezone
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone
 
 import discord
 
 from src.commands import pick, picks, stats, matches, result, leaderboard
 from src.models import Match, Pick as PickModel
+
+
+@dataclass(frozen=True)
+class MatchEmbedCase:
+    contest_name: str
+    contest_tier: str | None
+    game: str
+    best_of: int | None
+    expected_text: str
+
 
 # --- Mocks and Test Data ---
 
@@ -119,9 +131,29 @@ async def test_matches_view_by_day_no_matches(
 
 
 @pytest.mark.asyncio
-async def test_create_matches_embed_includes_game_label(mock_interaction):
+@pytest.mark.parametrize(
+    "case",
+    [
+        MatchEmbedCase(
+            "LCK Spring",
+            None,
+            "league-of-legends",
+            None,
+            "LCK Spring • LoL",
+        ),
+        MatchEmbedCase(
+            "First Stand",
+            "A",
+            "lol",
+            5,
+            "First Stand • A-tier • LoL • Bo5",
+        ),
+    ],
+)
+async def test_create_matches_embed_metadata(mock_interaction, case):
     contest = MagicMock()
-    contest.name = "LCK Spring"
+    contest.name = case.contest_name
+    contest.tier = case.contest_tier
     match = Match(
         id=1,
         contest_id=1,
@@ -129,7 +161,8 @@ async def test_create_matches_embed_includes_game_label(mock_interaction):
         team2="HLE",
         scheduled_time=datetime.now(timezone.utc),
         status="not_started",
-        game="league-of-legends",
+        game=case.game,
+        best_of=case.best_of,
     )
     match.contest = contest
     match.result = None
@@ -139,7 +172,7 @@ async def test_create_matches_embed_includes_game_label(mock_interaction):
     )
 
     assert embed.fields
-    assert "**Game:** LoL" in embed.fields[0].value
+    assert case.expected_text in embed.fields[0].value
 
 
 @pytest.mark.asyncio
