@@ -2,8 +2,12 @@
 Unit tests for PandaScore client and sync logic.
 """
 
+from datetime import datetime, timezone
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+from sqlmodel import SQLModel, Session, create_engine
+
+from src.models import Contest, Match
 
 
 def _make_mock_match(
@@ -15,6 +19,14 @@ def _make_mock_match(
     match.team1 = team1
     match.team2 = team2
     return match
+
+
+def _assert_match_data_game(
+    parser, match_data: dict, expected_game: str
+) -> None:
+    result = parser.extract_match_data(match_data, contest_id=1)
+    assert result is not None
+    assert result["game"] == expected_game
 
 
 class TestPandaScoreClient:
@@ -182,6 +194,19 @@ class TestLoLParser:
         assert result["best_of"] == 3
 
     @staticmethod
+    def test_extract_match_data_normalizes_lol_payload_slug(
+        parser,
+    ) -> None:
+        match_data = {
+            "id": 123456,
+            "scheduled_at": "2024-03-15T10:00:00Z",
+            "opponents": [],
+            "videogame": {"slug": "league-of-legends"},
+            "videogame_title": "League of Legends",
+        }
+        _assert_match_data_game(parser, match_data, "lol")
+
+    @staticmethod
     def test_extract_match_data_uses_payload_game_slug(parser):
         match_data = {
             "id": 123456,
@@ -189,10 +214,7 @@ class TestLoLParser:
             "opponents": [],
             "videogame": {"slug": "lol"},
         }
-
-        result = parser.extract_match_data(match_data, contest_id=1)
-        assert result is not None
-        assert result["game"] == "lol"
+        _assert_match_data_game(parser, match_data, "lol")
 
     @staticmethod
     def test_extract_match_data_missing_opponents(parser):
@@ -310,10 +332,7 @@ class TestCS2Parser:
             "videogame": {"slug": "counterstrike"},
             "videogame_title": "Counter-Strike 2",
         }
-
-        result = parser.extract_match_data(match_data, contest_id=1)
-        assert result is not None
-        assert result["game"] == "cs2"
+        _assert_match_data_game(parser, match_data, "cs2")
 
 
 class TestPandaScoreSyncIntegration:
@@ -355,6 +374,60 @@ class TestPandaScoreSyncIntegration:
         ):
             result = await perform_pandascore_sync()
             assert result is None
+
+    @staticmethod
+    @pytest.mark.asyncio
+    async def test_reconcile_finished_matches_handles_legacy_lol_rows(
+        async_session_for_engine,
+    ) -> None:
+        from src import pandascore_sync
+
+        engine = create_engine("sqlite:///:memory:")
+        SQLModel.metadata.create_all(engine)
+
+        with Session(engine) as session:
+            contest = Contest(
+                pandascore_league_id=1,
+                pandascore_serie_id=2,
+                name="LCK Spring",
+                start_date=datetime.now(timezone.utc),
+                end_date=datetime.now(timezone.utc),
+            )
+            session.add(contest)
+            session.commit()
+            session.refresh(contest)
+
+            session.add(
+                Match(
+                    contest_id=contest.id,
+                    pandascore_id=77,
+                    team1="T1",
+                    team2="GEN",
+                    status="live",
+                    game="league-of-legends",
+                    scheduled_time=datetime.now(timezone.utc),
+                )
+            )
+            session.commit()
+
+        with patch.object(
+            pandascore_sync,
+            "get_async_session",
+            return_value=async_session_for_engine(engine),
+        ), patch.object(
+            pandascore_sync,
+            "_fetch_pandascore_match",
+            new_callable=AsyncMock,
+            return_value={"status": "finished"},
+        ) as mock_fetch, patch.object(
+            pandascore_sync,
+            "fetch_and_update_match_result",
+            new_callable=AsyncMock,
+        ) as mock_update:
+            await pandascore_sync._reconcile_finished_matches_for_game("lol")
+
+        mock_fetch.assert_awaited_once_with(77, "lol")
+        mock_update.assert_awaited_once_with(77, game_slug="lol")
 
     @staticmethod
     @pytest.mark.asyncio

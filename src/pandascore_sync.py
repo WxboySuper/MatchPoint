@@ -36,10 +36,11 @@ from src.pandascore_utils import (
     safe_notify,
     safe_schedule,
 )
-from src.parsers.cs2 import normalize_counter_strike_slug
 from src.parsers.factory import get_parser, get_supported_game_slugs
+from src.parsers.game_slug import game_query_slugs, normalize_game_slug
 
 logger = logging.getLogger(__name__)
+RUNNING_MATCH_STATUSES = ("running", "live", "in_progress")
 
 
 def _normalize_enabled_game(
@@ -281,11 +282,13 @@ async def _fetch_matches_for_sync(
 
 
 async def _reconcile_finished_matches_for_game(game_slug: str) -> None:
+    normalized_game = normalize_game_slug(game_slug) or game_slug
+    game_slugs = game_query_slugs(normalized_game)
     async with get_async_session() as db_session:
         stmt = (
             select(Match)
-            .where(Match.game == game_slug)
-            .where(Match.status == "running")
+            .where(Match.game.in_(game_slugs))
+            .where(Match.status.in_(RUNNING_MATCH_STATUSES))
         )
         running_matches = list((await db_session.exec(stmt)).all())
 
@@ -294,10 +297,14 @@ async def _reconcile_finished_matches_for_game(game_slug: str) -> None:
         if not pandascore_id:
             continue
 
-        match_data = await _fetch_pandascore_match(pandascore_id, game_slug)
+        match_data = await _fetch_pandascore_match(
+            pandascore_id, normalized_game
+        )
         if not match_data:
             continue
-        await fetch_and_update_match_result(pandascore_id, game_slug=game_slug)
+        await fetch_and_update_match_result(
+            pandascore_id, game_slug=normalized_game
+        )
 
 
 async def _process_matches_and_commit(
@@ -433,9 +440,10 @@ async def sync_running_matches() -> Dict[str, Any]:
 
 def _match_data_game(match_data: Dict[str, Any]) -> Optional[str]:
     videogame = match_data.get("videogame") or {}
-    raw_slug = (videogame.get("slug") or "").lower()
-    title = str(match_data.get("videogame_title") or "").lower()
-    return normalize_counter_strike_slug(raw_slug, title) or raw_slug or None
+    return normalize_game_slug(
+        videogame.get("slug"),
+        match_data.get("videogame_title"),
+    )
 
 
 def _default_sync_game() -> str:
@@ -450,7 +458,9 @@ def _default_sync_game() -> str:
 
 def _resolve_match_game(match, match_data: Dict[str, Any]) -> str:
     if getattr(match, "game", None):
-        return match.game
+        normalized = normalize_game_slug(match.game)
+        if normalized:
+            return normalized
 
     resolved_game = _match_data_game(match_data)
     if resolved_game:

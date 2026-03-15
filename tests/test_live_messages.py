@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,17 +10,33 @@ import src.live_messages as live_messages
 from src.models import Contest, Match, Result
 
 
-@pytest.mark.asyncio
-async def test_refresh_scope_creates_missing_live_message():
+@dataclass(frozen=True)
+class _RefreshScopeCase:
+    guild_id: int
+    channel_id: int
+    message_id: int
+    scope: str
+    embed_title: str
+    has_live_record: bool = False
+
+
+@dataclass(frozen=True)
+class _MatchQueryCase:
+    fetcher: object
+    game: str
+    expected_ids: list[int]
+    matches_to_create: list[Match]
+
+
+async def _assert_refresh_scope(case: _RefreshScopeCase) -> None:
     guild = MagicMock()
-    guild.id = 111
+    guild.id = case.guild_id
     guild.me = None
 
     channel = AsyncMock()
-    channel.id = 222
-    sent_message = AsyncMock()
-    sent_message.id = 333
-    channel.send.return_value = sent_message
+    channel.id = case.channel_id
+    message = AsyncMock()
+    message.id = case.message_id
 
     guild.get_channel.return_value = channel
     cfg = MagicMock(
@@ -27,64 +44,16 @@ async def test_refresh_scope_creates_missing_live_message():
         announcement_channel_id=None,
         enabled_games="lol",
     )
-    embed = discord.Embed(title="Upcoming")
-
-    with patch.object(
-        live_messages,
-        "_load_live_record",
-        new_callable=AsyncMock,
-        return_value=None,
-    ), patch.object(
-        live_messages,
-        "_build_live_message_embed",
-        new_callable=AsyncMock,
-        return_value=embed,
-    ), patch.object(
-        live_messages,
-        "_persist_live_message_pointer",
-        new_callable=AsyncMock,
-    ) as mock_persist:
-        await live_messages._refresh_guild_scope(
-            cfg,
-            live_messages.LiveMessageScope(
-                guild=guild,
-                game="lol",
-                scope="upcoming",
-            ),
+    embed = discord.Embed(title=case.embed_title)
+    live_record = None
+    if case.has_live_record:
+        channel.fetch_message.return_value = message
+        live_record = MagicMock(
+            channel_id=channel.id,
+            message_id=case.message_id,
         )
-
-    channel.send.assert_awaited_once_with(embed=embed)
-    mock_persist.assert_awaited_once_with(
-        live_messages.LiveMessageScope(
-            guild=guild,
-            game="lol",
-            scope="upcoming",
-        ),
-        channel.id,
-        sent_message.id,
-    )
-
-
-@pytest.mark.asyncio
-async def test_refresh_scope_edits_existing_live_message():
-    guild = MagicMock()
-    guild.id = 222
-    guild.me = None
-
-    channel = AsyncMock()
-    channel.id = 444
-    fetched_message = AsyncMock()
-    fetched_message.id = 555
-    channel.fetch_message.return_value = fetched_message
-
-    guild.get_channel.return_value = channel
-    cfg = MagicMock(
-        live_updates_channel_id=channel.id,
-        announcement_channel_id=None,
-        enabled_games="lol",
-    )
-    live_record = MagicMock(channel_id=channel.id, message_id=555)
-    embed = discord.Embed(title="Running")
+    else:
+        channel.send.return_value = message
 
     with patch.object(
         live_messages,
@@ -106,21 +75,50 @@ async def test_refresh_scope_edits_existing_live_message():
             live_messages.LiveMessageScope(
                 guild=guild,
                 game="lol",
-                scope="running",
+                scope=case.scope,
             ),
         )
 
-    fetched_message.edit.assert_awaited_once_with(embed=embed)
-    channel.send.assert_not_called()
+    if case.has_live_record:
+        message.edit.assert_awaited_once_with(embed=embed)
+        channel.send.assert_not_called()
+    else:
+        channel.send.assert_awaited_once_with(embed=embed)
+
     mock_persist.assert_awaited_once_with(
         live_messages.LiveMessageScope(
             guild=guild,
             game="lol",
-            scope="running",
+            scope=case.scope,
         ),
         channel.id,
-        live_record.message_id,
+        message.id,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "case",
+    [
+        _RefreshScopeCase(
+            guild_id=111,
+            channel_id=222,
+            message_id=333,
+            scope="upcoming",
+            embed_title="Upcoming",
+        ),
+        _RefreshScopeCase(
+            guild_id=222,
+            channel_id=444,
+            message_id=555,
+            scope="running",
+            embed_title="Running",
+            has_live_record=True,
+        ),
+    ],
+)
+async def test_refresh_scope_behaviors(case):
+    await _assert_refresh_scope(case)
 
 
 def test_build_running_embed_keeps_empty_state_message():
@@ -138,7 +136,9 @@ def test_build_upcoming_embed_uses_count_based_empty_state_message():
 
 
 @pytest.mark.asyncio
-async def test_fetch_running_matches_excludes_finished_results():
+async def test_fetch_running_matches_excludes_finished_results(
+    async_session_for_engine,
+):
     engine = create_engine("sqlite:///:memory:")
     SQLModel.metadata.create_all(engine)
 
@@ -187,38 +187,19 @@ async def test_fetch_running_matches_excludes_finished_results():
         )
         session.commit()
 
-    class _ResultWrapper:
-        def __init__(self, rows):
-            self._rows = rows
-
-        def all(self):
-            return self._rows
-
-    class _AsyncSession:
-        @staticmethod
-        async def exec(stmt):
-            with Session(engine) as session:
-                return _ResultWrapper(list(session.exec(stmt).all()))
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            _ = (exc_type, exc, tb)
-            return False
-
     with patch.object(
         live_messages,
         "get_async_session",
-        return_value=_AsyncSession(),
+        return_value=async_session_for_engine(engine),
     ):
         matches = await live_messages._fetch_running_matches("lol")
 
     assert [match.pandascore_id for match in matches] == [1]
 
 
-@pytest.mark.asyncio
-async def test_fetch_upcoming_matches_includes_future_scheduled_statuses():
+async def _assert_match_query_ids(
+    async_session_for_engine, case: _MatchQueryCase
+) -> None:
     engine = create_engine("sqlite:///:memory:")
     SQLModel.metadata.create_all(engine)
 
@@ -226,7 +207,7 @@ async def test_fetch_upcoming_matches_includes_future_scheduled_statuses():
         contest = Contest(
             pandascore_league_id=10,
             pandascore_serie_id=20,
-            name="IEM Katowice",
+            name="Test Contest",
             start_date=datetime.now(timezone.utc),
             end_date=datetime.now(timezone.utc),
         )
@@ -234,53 +215,82 @@ async def test_fetch_upcoming_matches_includes_future_scheduled_statuses():
         session.commit()
         session.refresh(contest)
 
-        scheduled_match = Match(
-            contest_id=contest.id,
-            pandascore_id=10,
-            team1="Alpha",
-            team2="Beta",
-            status="scheduled",
-            game="lol",
-            scheduled_time=datetime.now(timezone.utc) + timedelta(hours=1),
-        )
-        finished_match = Match(
-            contest_id=contest.id,
-            pandascore_id=11,
-            team1="Gamma",
-            team2="Delta",
-            status="finished",
-            game="lol",
-            scheduled_time=datetime.now(timezone.utc) + timedelta(hours=2),
-        )
-        session.add(scheduled_match)
-        session.add(finished_match)
+        for match in case.matches_to_create:
+            match.contest_id = contest.id
+            session.add(match)
         session.commit()
-
-    class _ResultWrapper:
-        def __init__(self, rows):
-            self._rows = rows
-
-        def all(self):
-            return self._rows
-
-    class _AsyncSession:
-        @staticmethod
-        async def exec(stmt):
-            with Session(engine) as session:
-                return _ResultWrapper(list(session.exec(stmt).all()))
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            _ = (exc_type, exc, tb)
-            return False
 
     with patch.object(
         live_messages,
         "get_async_session",
-        return_value=_AsyncSession(),
+        return_value=async_session_for_engine(engine),
     ):
-        matches = await live_messages._fetch_upcoming_matches("lol")
+        matches = await case.fetcher(case.game)
 
-    assert [match.pandascore_id for match in matches] == [10]
+    assert [match.pandascore_id for match in matches] == case.expected_ids
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "case",
+    [
+        _MatchQueryCase(
+            fetcher=live_messages._fetch_upcoming_matches,
+            game="lol",
+            expected_ids=[10],
+            matches_to_create=[
+                Match(
+                    pandascore_id=10,
+                    team1="Alpha",
+                    team2="Beta",
+                    status="scheduled",
+                    game="lol",
+                    scheduled_time=datetime.now(timezone.utc)
+                    + timedelta(hours=1),
+                ),
+                Match(
+                    pandascore_id=11,
+                    team1="Gamma",
+                    team2="Delta",
+                    status="finished",
+                    game="lol",
+                    scheduled_time=datetime.now(timezone.utc)
+                    + timedelta(hours=2),
+                ),
+            ],
+        ),
+        _MatchQueryCase(
+            fetcher=live_messages._fetch_upcoming_matches,
+            game="lol",
+            expected_ids=[20],
+            matches_to_create=[
+                Match(
+                    pandascore_id=20,
+                    team1="T1",
+                    team2="GEN",
+                    status="not_started",
+                    game="league-of-legends",
+                    scheduled_time=datetime.now(timezone.utc)
+                    + timedelta(hours=1),
+                )
+            ],
+        ),
+        _MatchQueryCase(
+            fetcher=live_messages._fetch_running_matches,
+            game="lol",
+            expected_ids=[30],
+            matches_to_create=[
+                Match(
+                    pandascore_id=30,
+                    team1="BLG",
+                    team2="TES",
+                    status="live",
+                    game="league-of-legends",
+                    scheduled_time=datetime.now(timezone.utc),
+                )
+            ],
+        ),
+    ],
+)
+async def test_match_query_behaviors(async_session_for_engine, case):
+    await _assert_match_query_ids(async_session_for_engine, case)
