@@ -37,32 +37,34 @@ def _build_match(case: MatchFixtureCase) -> Match:
 
 
 @pytest.fixture
-def mock_match():
-    return _build_match(
-        MatchFixtureCase(
-            match_id=1,
-            team1="T1",
-            team2="T2",
-            contest_name="Worlds",
-            days_from_now=1,
-            best_of=1,
-        )
-    )
+def mock_matches():
+    return [
+        _build_match(
+            MatchFixtureCase(
+                match_id=1,
+                team1="T1",
+                team2="T2",
+                contest_name="Worlds",
+                days_from_now=1,
+                best_of=1,
+            )
+        ),
+        _build_match(
+            MatchFixtureCase(
+                match_id=2,
+                team1="G2",
+                team2="FNC",
+                contest_name="LEC",
+                days_from_now=2,
+                best_of=3,
+            )
+        ),
+    ]
 
 
 @pytest.fixture
-def mock_matches(mock_match):
-    m2 = _build_match(
-        MatchFixtureCase(
-            match_id=2,
-            team1="G2",
-            team2="FNC",
-            contest_name="LEC",
-            days_from_now=2,
-            best_of=3,
-        )
-    )
-    return [mock_match, m2]
+def mock_match(mock_matches):
+    return mock_matches[0]
 
 
 @pytest.mark.asyncio
