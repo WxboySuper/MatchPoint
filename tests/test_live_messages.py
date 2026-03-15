@@ -28,25 +28,6 @@ class _MatchQueryCase:
     matches_to_create: list[Match]
 
 
-def _build_scope_case(
-    *,
-    guild_id: int,
-    channel_id: int,
-    message_id: int,
-    scope: str,
-    embed_title: str,
-    has_live_record: bool = False,
-) -> _RefreshScopeCase:
-    return _RefreshScopeCase(
-        guild_id=guild_id,
-        channel_id=channel_id,
-        message_id=message_id,
-        scope=scope,
-        embed_title=embed_title,
-        has_live_record=has_live_record,
-    )
-
-
 async def _assert_refresh_scope(case: _RefreshScopeCase) -> None:
     guild = MagicMock()
     guild.id = case.guild_id
@@ -116,30 +97,28 @@ async def _assert_refresh_scope(case: _RefreshScopeCase) -> None:
 
 
 @pytest.mark.asyncio
-async def test_refresh_scope_creates_missing_live_message():
-    await _assert_refresh_scope(
-        _build_scope_case(
+@pytest.mark.parametrize(
+    "case",
+    [
+        _RefreshScopeCase(
             guild_id=111,
             channel_id=222,
             message_id=333,
             scope="upcoming",
             embed_title="Upcoming",
-        )
-    )
-
-
-@pytest.mark.asyncio
-async def test_refresh_scope_edits_existing_live_message():
-    await _assert_refresh_scope(
-        _build_scope_case(
+        ),
+        _RefreshScopeCase(
             guild_id=222,
             channel_id=444,
             message_id=555,
             scope="running",
             embed_title="Running",
             has_live_record=True,
-        )
-    )
+        ),
+    ],
+)
+async def test_refresh_scope_behaviors(case):
+    await _assert_refresh_scope(case)
 
 
 def test_build_running_embed_keeps_empty_state_message():
@@ -252,11 +231,9 @@ async def _assert_match_query_ids(
 
 
 @pytest.mark.asyncio
-async def test_fetch_upcoming_matches_includes_future_scheduled_statuses(
-    async_session_for_engine,
-):
-    await _assert_match_query_ids(
-        async_session_for_engine,
+@pytest.mark.parametrize(
+    "case",
+    [
         _MatchQueryCase(
             fetcher=live_messages._fetch_upcoming_matches,
             game="lol",
@@ -282,15 +259,6 @@ async def test_fetch_upcoming_matches_includes_future_scheduled_statuses(
                 ),
             ],
         ),
-    )
-
-
-@pytest.mark.asyncio
-async def test_fetch_upcoming_matches_includes_legacy_lol_slug_rows(
-    async_session_for_engine,
-):
-    await _assert_match_query_ids(
-        async_session_for_engine,
         _MatchQueryCase(
             fetcher=live_messages._fetch_upcoming_matches,
             game="lol",
@@ -307,15 +275,6 @@ async def test_fetch_upcoming_matches_includes_legacy_lol_slug_rows(
                 )
             ],
         ),
-    )
-
-
-@pytest.mark.asyncio
-async def test_fetch_running_matches_accepts_live_status_aliases(
-    async_session_for_engine,
-):
-    await _assert_match_query_ids(
-        async_session_for_engine,
         _MatchQueryCase(
             fetcher=live_messages._fetch_running_matches,
             game="lol",
@@ -331,4 +290,7 @@ async def test_fetch_running_matches_accepts_live_status_aliases(
                 )
             ],
         ),
-    )
+    ],
+)
+async def test_match_query_behaviors(async_session_for_engine, case):
+    await _assert_match_query_ids(async_session_for_engine, case)
