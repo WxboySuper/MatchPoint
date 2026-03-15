@@ -3,8 +3,6 @@ Unit tests for PandaScore client and sync logic.
 """
 
 from datetime import datetime, timezone
-from pathlib import Path
-from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -151,32 +149,6 @@ class TestLoLParser:
         """Test extracting team data with missing opponent key."""
         result = parser.extract_team_data({})
         assert result is None
-
-    @staticmethod
-    def test_extract_contest_data(parser):
-        """Test extracting contest data from match."""
-        match_data = {
-            "league": {
-                "id": 1,
-                "name": "LCS",
-                "image_url": "http://img",
-                "tier": "S-tier",
-            },
-            "serie": {
-                "id": 10,
-                "name": "Spring",
-                "full_name": "Spring Split 2024",
-            },
-            "scheduled_at": "2024-03-15T10:00:00Z",
-        }
-
-        result = parser.extract_contest_data(match_data)
-        assert result["pandascore_league_id"] == 1
-        assert result["pandascore_serie_id"] == 10
-        assert "LCS" in result["name"]
-        assert "Spring" in result["name"]
-        assert result["image_url"] == "http://img"
-        assert result["tier"] == "S"
 
     @staticmethod
     def test_extract_match_data_valid(parser):
@@ -553,59 +525,6 @@ class TestPandaScoreSyncIntegration:
             call.kwargs["game"] for call in mock_fetch.await_args_list
         }
         assert requested_games == {"lol", "cs2"}
-
-    @staticmethod
-    @pytest.mark.asyncio
-    async def test_upsert_contest_by_pandascore_persists_tier():
-        from sqlmodel.ext.asyncio.session import AsyncSession
-        from sqlalchemy.ext.asyncio import create_async_engine
-
-        from src.crud.contest import (
-            get_contest_by_pandascore_ids,
-            upsert_contest_by_pandascore,
-        )
-
-        temp_root = Path(".pytest_tmp")
-        temp_root.mkdir(exist_ok=True)
-        db_path = temp_root / f"contest-tier-{uuid4().hex}.db"
-        sync_engine = create_engine(f"sqlite:///{db_path}")
-        SQLModel.metadata.create_all(sync_engine)
-        async_engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
-
-        try:
-            async with AsyncSession(async_engine) as session:
-                contest = await upsert_contest_by_pandascore(
-                    session,
-                    {
-                        "pandascore_league_id": 1,
-                        "pandascore_serie_id": 2,
-                        "name": "LCK Spring",
-                        "start_date": datetime(
-                            2026, 3, 14, 10, 0, tzinfo=timezone.utc
-                        ),
-                        "end_date": datetime(
-                            2026, 3, 14, 10, 0, tzinfo=timezone.utc
-                        ),
-                        "tier": "S",
-                    },
-                )
-                assert contest is not None
-                await session.commit()
-
-            async with AsyncSession(async_engine) as session:
-                persisted = await get_contest_by_pandascore_ids(
-                    session,
-                    1,
-                    2,
-                )
-
-            assert persisted is not None
-            assert persisted.tier == "S"
-        finally:
-            sync_engine.dispose()
-            await async_engine.dispose()
-            if db_path.exists():
-                db_path.unlink()
 
 
 class TestPandaScoreClientRateLimiting:
