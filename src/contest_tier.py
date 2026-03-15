@@ -47,14 +47,17 @@ def normalize_contest_tier(raw_tier: Any) -> Optional[str]:
 def extract_contest_tier(match_data: dict[str, Any]) -> Optional[str]:
     league = match_data.get("league") or {}
     serie = match_data.get("serie") or {}
+    tournament = match_data.get("tournament") or {}
 
     candidates = (
         match_data.get("tier"),
         league.get("tier"),
         serie.get("tier"),
+        tournament.get("tier"),
         match_data.get("tournament_tier"),
         league.get("tournament_tier"),
         serie.get("tournament_tier"),
+        tournament.get("tournament_tier"),
     )
     for candidate in candidates:
         normalized = normalize_contest_tier(candidate)
