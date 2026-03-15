@@ -20,6 +20,7 @@ class MatchEmbedCase:
     best_of: int | None
     expected_text: str
 
+
 # --- Mocks and Test Data ---
 
 
