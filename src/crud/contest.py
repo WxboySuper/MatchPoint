@@ -16,6 +16,7 @@ class ContestUpdateParams:
     name: Optional[str] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
+    tier: Optional[str] = None
 
 
 async def upsert_contest(
@@ -41,7 +42,7 @@ async def upsert_contest(
         session,
         Contest,
         contest_data,
-        update_keys=["name", "start_date", "end_date"],
+        update_keys=["name", "start_date", "end_date", "tier"],
     )
 
 
@@ -100,7 +101,7 @@ async def upsert_contest_by_pandascore(
 def _update_contest_from_data(contest: Contest, contest_data: dict) -> None:
     """Updates existing contest fields from data."""
     logger.info("Updating existing contest: %s", contest.name)
-    for key in ["name", "start_date", "end_date", "image_url"]:
+    for key in ["name", "start_date", "end_date", "image_url", "tier"]:
         if key in contest_data and contest_data[key] is not None:
             setattr(contest, key, contest_data[key])
 
@@ -152,6 +153,7 @@ def create_contest(session: Session, contest_data: dict) -> Contest:
     start_date = contest_data.get("start_date")
     end_date = contest_data.get("end_date")
     leaguepedia_id = contest_data.get("leaguepedia_id")
+    tier = contest_data.get("tier")
 
     logger.info("Creating contest: %s", name)
     contest = Contest(
@@ -159,6 +161,7 @@ def create_contest(session: Session, contest_data: dict) -> Contest:
         start_date=start_date,
         end_date=end_date,
         leaguepedia_id=leaguepedia_id,
+        tier=tier,
     )
     _save_and_refresh(session, contest)
     logger.info("Created contest with ID: %s", contest.id)
@@ -202,6 +205,8 @@ def update_contest(
         contest.start_date = params.start_date
     if params.end_date is not None:
         contest.end_date = params.end_date
+    if params.tier is not None:
+        contest.tier = params.tier
     _save_and_refresh(session, contest)
     logger.info("Updated contest ID: %s", contest_id)
     return contest

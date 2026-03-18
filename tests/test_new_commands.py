@@ -119,6 +119,58 @@ async def test_matches_view_by_day_no_matches(
 
 
 @pytest.mark.asyncio
+async def test_create_matches_embed_includes_game_label(mock_interaction):
+    contest = MagicMock()
+    contest.name = "LCK Spring"
+    match = Match(
+        id=1,
+        contest_id=1,
+        team1="T1",
+        team2="HLE",
+        scheduled_time=datetime.now(timezone.utc),
+        status="not_started",
+        game="league-of-legends",
+    )
+    match.contest = contest
+    match.result = None
+
+    embed = await matches.create_matches_embed(
+        "Test Matches", [match], mock_interaction
+    )
+
+    assert embed.fields
+    assert "LCK Spring • LoL" in embed.fields[0].value
+
+
+@pytest.mark.asyncio
+async def test_create_matches_embed_includes_tier_when_present(
+    mock_interaction,
+):
+    contest = MagicMock()
+    contest.name = "First Stand"
+    contest.tier = "A"
+    match = Match(
+        id=1,
+        contest_id=1,
+        team1="T1",
+        team2="HLE",
+        scheduled_time=datetime.now(timezone.utc),
+        status="not_started",
+        game="lol",
+        best_of=5,
+    )
+    match.contest = contest
+    match.result = None
+
+    embed = await matches.create_matches_embed(
+        "Test Matches", [match], mock_interaction
+    )
+
+    assert embed.fields
+    assert "First Stand • A-tier • LoL • Bo5" in embed.fields[0].value
+
+
+@pytest.mark.asyncio
 @patch("src.commands.leaderboard.get_session")
 async def test_leaderboard_command_empty(
     mock_get_session, mock_interaction, mock_session

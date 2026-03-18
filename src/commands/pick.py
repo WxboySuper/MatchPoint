@@ -9,6 +9,11 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from src.db import get_session
+from src.match_display import (
+    format_match_heading,
+    format_match_metadata,
+    format_match_time,
+)
 from src.models import Match
 from src import crud
 
@@ -119,27 +124,17 @@ class PickView(discord.ui.View):
         match = self.current_match
         current_pick = self.user_picks.get(match.id)
 
-        contest_name = (
-            match.contest.name if match.contest else "Unknown Tournament"
-        )
-        timestamp = int(match.scheduled_time.timestamp())
-        time_str = f"<t:{timestamp}:F> (<t:{timestamp}:R>)"
-
         embed = discord.Embed(
             title=f"Match {self.current_index + 1} of {len(self.matches)}",
-            description=f"**{contest_name}**",
+            description="\n".join(
+                [
+                    f"**{format_match_heading(match)}**",
+                    format_match_metadata(match),
+                    format_match_time(match),
+                ]
+            ),
             color=discord.Color.blue(),
         )
-
-        embed.add_field(
-            name="Teams", value=f"{match.team1} vs {match.team2}", inline=False
-        )
-        embed.add_field(
-            name="Format",
-            value=f"Best of {match.best_of}" if match.best_of else "Best of ?",
-            inline=True,
-        )
-        embed.add_field(name="Time", value=time_str, inline=False)
 
         pick_status = f"✅ **{current_pick}**" if current_pick else "❌ None"
         if datetime.now(timezone.utc) >= match.scheduled_time:

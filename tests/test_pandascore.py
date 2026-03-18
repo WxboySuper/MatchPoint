@@ -2,6 +2,8 @@
 Unit tests for PandaScore client and sync logic.
 """
 
+from pathlib import Path
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -136,7 +138,12 @@ class TestLoLParser:
     def test_extract_contest_data(self, parser):
         """Test extracting contest data from match."""
         match_data = {
-            "league": {"id": 1, "name": "LCS", "image_url": "http://img"},
+            "league": {
+                "id": 1,
+                "name": "LCS",
+                "image_url": "http://img",
+                "tier": "S-tier",
+            },
             "serie": {
                 "id": 10,
                 "name": "Spring",
@@ -151,6 +158,7 @@ class TestLoLParser:
         assert "LCS" in result["name"]
         assert "Spring" in result["name"]
         assert result["image_url"] == "http://img"
+        assert result["tier"] == "S"
 
     def test_extract_match_data_valid(self, parser):
         """Test extracting match data from PandaScore match object."""
@@ -174,6 +182,20 @@ class TestLoLParser:
         assert result["team1_id"] == 100
         assert result["team2_id"] == 200
         assert result["best_of"] == 3
+
+    @staticmethod
+    def test_extract_match_data_normalizes_lol_payload_slug(parser):
+        match_data = {
+            "id": 123456,
+            "scheduled_at": "2024-03-15T10:00:00Z",
+            "opponents": [],
+            "videogame": {"slug": "league-of-legends"},
+            "videogame_title": "League of Legends",
+        }
+
+        result = parser.extract_match_data(match_data, contest_id=1)
+        assert result is not None
+        assert result["game"] == "lol"
 
     @staticmethod
     def test_extract_match_data_uses_payload_game_slug(parser):
@@ -393,6 +415,49 @@ class TestPandaScoreSyncIntegration:
         }
         assert requested_games == {"lol", "cs2"}
         assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_upsert_contest_by_pandascore_persists_tier(self):
+        from datetime import datetime, timezone
+
+        from sqlmodel import SQLModel, create_engine
+        from sqlmodel.ext.asyncio.session import AsyncSession
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        from src.crud.contest import upsert_contest_by_pandascore
+
+        db_path = Path("data") / "contest-tier-test.db"
+        db_path.parent.mkdir(exist_ok=True)
+        if db_path.exists():
+            db_path.unlink()
+        sync_engine = create_engine(f"sqlite:///{db_path}")
+        SQLModel.metadata.create_all(sync_engine)
+        async_engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+
+        try:
+            async with AsyncSession(async_engine) as session:
+                contest = await upsert_contest_by_pandascore(
+                    session,
+                    {
+                        "pandascore_league_id": 1,
+                        "pandascore_serie_id": 2,
+                        "name": "LCK Spring",
+                        "start_date": datetime(
+                            2026, 3, 14, 10, 0, tzinfo=timezone.utc
+                        ),
+                        "end_date": datetime(
+                            2026, 3, 14, 10, 0, tzinfo=timezone.utc
+                        ),
+                        "tier": "S",
+                    },
+                )
+                assert contest is not None
+                assert contest.tier == "S"
+        finally:
+            sync_engine.dispose()
+            await async_engine.dispose()
+            if db_path.exists():
+                db_path.unlink()
 
     @pytest.mark.asyncio
     async def test_perform_pandascore_sync_includes_guild_enabled_games(self):

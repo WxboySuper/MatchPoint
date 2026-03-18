@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Tuple
 
 from src.parsers.base import PandaScoreParser
+from src.contest_tier import extract_contest_tier
+from src.parsers.game_slug import normalize_game_slug
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +29,13 @@ def _team_display_name(team_info: Dict[str, Any]) -> str:
 
 def _match_game_slug(match_data: Dict[str, Any]) -> str:
     videogame = match_data.get("videogame") or {}
-    raw_slug = (videogame.get("slug") or "").lower()
-    title = str(match_data.get("videogame_title") or "").lower()
-    if raw_slug in {"counterstrike", "counter-strike", "cs2"}:
-        return "cs2"
-    if "counter-strike 2" in title or title == "cs2":
-        return "cs2"
-    return raw_slug or "lol"
+    return (
+        normalize_game_slug(
+            videogame.get("slug"),
+            match_data.get("videogame_title"),
+        )
+        or "lol"
+    )
 
 
 class LoLParser(PandaScoreParser):
@@ -77,6 +79,7 @@ class LoLParser(PandaScoreParser):
             "start_date": scheduled_at or now,
             "end_date": scheduled_at or now,
             "image_url": league.get("image_url"),
+            "tier": extract_contest_tier(match_data),
         }
 
     @staticmethod

@@ -36,6 +36,7 @@ from src.pandascore_processing import (
     _detect_match_result,
 )
 from src.parsers.factory import get_parser, get_supported_game_slugs
+from src.parsers.game_slug import normalize_game_slug
 
 logger = logging.getLogger(__name__)
 
@@ -420,11 +421,17 @@ async def sync_running_matches() -> Dict[str, Any]:
 
 def _resolve_match_game(match, match_data: Dict[str, Any]) -> str:
     if getattr(match, "game", None):
-        return match.game
+        normalized = normalize_game_slug(match.game)
+        if normalized:
+            return normalized
 
     videogame = match_data.get("videogame") or {}
-    if videogame.get("slug"):
-        return videogame["slug"]
+    normalized = normalize_game_slug(
+        videogame.get("slug"),
+        match_data.get("videogame_title"),
+    )
+    if normalized:
+        return normalized
 
     from src.config import DEFAULT_GAMES
 

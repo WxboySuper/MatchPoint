@@ -131,3 +131,16 @@ async def test_pick_view_locked_match(mock_matches):
     pick_field = next((f for f in embed.fields if f.name == "Your Pick"), None)
     assert pick_field is not None
     assert "(Locked)" in pick_field.value
+
+
+@pytest.mark.asyncio
+async def test_pick_view_embed_uses_compact_match_metadata(mock_match):
+    mock_match.game = "lol"
+    mock_match.contest.tier = "S"
+
+    view = PickView(matches=[mock_match], user_picks={}, user_id=123)
+    embed = view.get_embed()
+
+    assert "**T1 vs T2 — ⏳ Upcoming**" in embed.description
+    assert "Worlds • S-tier • LoL • Bo1" in embed.description
+    assert "<t:" in embed.description
