@@ -4,6 +4,11 @@ from typing import Any, Optional
 def _clean_text(value: Any) -> str:
     if isinstance(value, str):
         return value.strip().lower()
+    if isinstance(value, dict):
+        for key in ("name", "title", "full_name", "slug"):
+            candidate = value.get(key)
+            if isinstance(candidate, str):
+                return candidate.strip().lower()
     return ""
 
 
@@ -42,7 +47,7 @@ def normalize_game_slug(
 
 
 def game_query_slugs(game: str) -> tuple[str, ...]:
-    normalized = normalize_game_slug(game) or _clean_text(game)
+    normalized = normalize_game_slug(game)
     if normalized == "lol":
         return ("lol", "league-of-legends", "leagueoflegends")
     if normalized == "cs2":
