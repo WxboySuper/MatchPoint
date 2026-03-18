@@ -1,4 +1,10 @@
-from typing import Optional
+from typing import Any, Optional
+
+
+def _clean_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip().lower()
+    return ""
 
 
 def _normalize_lol_slug(raw_slug: str, raw_title: str) -> Optional[str]:
@@ -18,11 +24,11 @@ def _normalize_cs2_slug(raw_slug: str, raw_title: str) -> Optional[str]:
 
 
 def normalize_game_slug(
-    slug: Optional[str],
-    title: Optional[str] = None,
+    slug: Any,
+    title: Any = None,
 ) -> Optional[str]:
-    raw_slug = (slug or "").strip().lower()
-    raw_title = (title or "").strip().lower()
+    raw_slug = _clean_text(slug)
+    raw_title = _clean_text(title)
 
     normalized_lol = _normalize_lol_slug(raw_slug, raw_title)
     if normalized_lol:
@@ -36,12 +42,12 @@ def normalize_game_slug(
 
 
 def game_query_slugs(game: str) -> tuple[str, ...]:
-    normalized = normalize_game_slug(game) or game.strip().lower()
+    normalized = normalize_game_slug(game) or _clean_text(game)
     if normalized == "lol":
         return ("lol", "league-of-legends", "leagueoflegends")
     if normalized == "cs2":
         return ("cs2", "csgo", "counterstrike", "counter-strike")
-    return (normalized,)
+    return (normalized,) if normalized else tuple()
 
 
 def game_display_name(game: Optional[str]) -> str:
@@ -52,4 +58,4 @@ def game_display_name(game: Optional[str]) -> str:
         return "CS2"
     if not game:
         return "Unknown"
-    return game.upper()
+    return str(game).upper()
