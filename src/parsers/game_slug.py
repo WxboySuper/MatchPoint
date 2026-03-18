@@ -47,7 +47,7 @@ def game_query_slugs(game: str) -> tuple[str, ...]:
         return ("lol", "league-of-legends", "leagueoflegends")
     if normalized == "cs2":
         return ("cs2", "csgo", "counterstrike", "counter-strike")
-    return (normalized,) if normalized else tuple()
+    return (normalized,) if normalized else ()
 
 
 def game_display_name(game: Optional[str]) -> str:
