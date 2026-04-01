@@ -5,10 +5,12 @@ from typing import Optional
 from src.parsers.lol import LoLParser
 from src.parsers.base import PandaScoreParser
 from src.parsers.cs2 import CS2Parser
+from src.parsers.valorant import ValorantParser
 
 _PARSERS = {
     "lol": LoLParser,
     "cs2": CS2Parser,
+    "valorant": ValorantParser,
 }
 
 

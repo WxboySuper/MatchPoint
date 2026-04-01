@@ -28,6 +28,14 @@ def _normalize_cs2_slug(raw_slug: str, raw_title: str) -> Optional[str]:
     return None
 
 
+def _normalize_valorant_slug(raw_slug: str, raw_title: str) -> Optional[str]:
+    if raw_slug in {"valorant", "val", "vct"}:
+        return "valorant"
+    if "valorant" in raw_title:
+        return "valorant"
+    return None
+
+
 def normalize_game_slug(
     slug: Any,
     title: Any = None,
@@ -43,6 +51,10 @@ def normalize_game_slug(
     if normalized_cs2:
         return normalized_cs2
 
+    normalized_valorant = _normalize_valorant_slug(raw_slug, raw_title)
+    if normalized_valorant:
+        return normalized_valorant
+
     return raw_slug or None
 
 
@@ -52,6 +64,8 @@ def game_query_slugs(game: str) -> tuple[str, ...]:
         return ("lol", "league-of-legends", "leagueoflegends")
     if normalized == "cs2":
         return ("cs2", "csgo", "counterstrike", "counter-strike")
+    if normalized == "valorant":
+        return ("valorant", "val", "vct")
     return (normalized,) if normalized else ()
 
 
@@ -61,6 +75,8 @@ def game_display_name(game: Optional[str]) -> str:
         return "LoL"
     if normalized == "cs2":
         return "CS2"
+    if normalized == "valorant":
+        return "Valorant"
     if not game:
         return "Unknown"
     return str(game).upper()
