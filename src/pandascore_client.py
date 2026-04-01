@@ -15,6 +15,12 @@ import aiohttp
 from aiohttp import ClientError, ClientResponseError, ClientTimeout
 
 from src.config import PANDASCORE_API_KEY
+from src.rate_limit import (
+    extract_rate_limit_headers,
+    should_backoff,
+    exponential_backoff,
+    InMemoryRateLimitStore,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +91,7 @@ class PandaScoreClient:
         self._session: Optional[aiohttp.ClientSession] = None
         self._request_count = 0
         self._window_start = datetime.now(timezone.utc)
+        self._rate_limit_store = InMemoryRateLimitStore()
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create an aiohttp session."""
@@ -136,12 +143,19 @@ class PandaScoreClient:
         session: aiohttp.ClientSession,
         url: str,
         params: Optional[Dict[str, Any]] = None,
+        rate_limit_store=None,
+        resource: str = "default",
     ) -> JSONType:
         """Perform a single HTTP GET and return parsed JSON or raise.
 
-        Keeps the request-scoped branching small so _make_request is simpler.
+        Reads rate-limit headers from responses and updates persisted state.
         """
         async with session.get(url, params=params) as response:
+            # Extract and persist rate-limit headers from any response
+            rl_info = extract_rate_limit_headers(dict(response.headers))
+            if rl_info and rate_limit_store:
+                await rate_limit_store.set(resource, rl_info)
+
             if response.status == 429:
                 retry_after = response.headers.get("Retry-After")
                 retry_seconds = int(retry_after) if retry_after else 60
@@ -199,16 +213,15 @@ class PandaScoreClient:
     async def _handle_rate_limit_error(
         e: RateLimitError, attempt: int, max_retries: int
     ) -> None:
-        """Handle PandaScore rate-limit errors with Retry-After/backoff.
+        """Handle PandaScore rate-limit errors with exponential backoff.
 
-        Extracted from `_request_with_retries` to reduce its cyclomatic
-        complexity and centralize rate-limit behavior.
+        Uses exponential backoff with jitter instead of just Retry-After.
         """
         retry_seconds = getattr(e, "retry_after", None)
         if attempt == max_retries - 1:
             raise e
         if retry_seconds is None:
-            retry_seconds = min(60, 2**attempt)
+            retry_seconds = exponential_backoff(attempt)
         logger.warning(
             "PandaScore rate limited; sleeping %s seconds before retry",
             retry_seconds,
@@ -221,22 +234,39 @@ class PandaScoreClient:
         url: str,
         params: Optional[Dict[str, Any]] = None,
         max_retries: int = 3,
+        resource: str = "default",
     ) -> JSONType:
         """Perform request with retry/backoff handling.
 
-        Extracted to reduce complexity in `_make_request`.
+        Checks persisted rate-limit state before each request.
+        Uses exponential backoff with jitter for retries.
         """
         for attempt in range(max_retries):
             try:
+                rl_state = await self._rate_limit_store.get(resource)
+                if rl_state:
+                    wait = should_backoff(
+                        rl_state.get("remaining"),
+                        rl_state.get("reset_at"),
+                    )
+                    if wait:
+                        logger.info(
+                            "Rate limit approaching for %s; waiting %ds",
+                            resource, wait,
+                        )
+                        await asyncio.sleep(wait)
+
                 self._request_count += 1
                 logger.debug(
                     "PandaScore request #%d: GET %s params=%s",
-                    self._request_count,
-                    url,
-                    params,
+                    self._request_count, url, params,
                 )
 
-                return await self._do_request_once(session, url, params)
+                return await self._do_request_once(
+                    session, url, params,
+                    rate_limit_store=self._rate_limit_store,
+                    resource=resource,
+                )
 
             except RateLimitError as e:
                 await self._handle_rate_limit_error(e, attempt, max_retries)
@@ -298,9 +328,10 @@ class PandaScoreClient:
 
         url = self._build_url(endpoint)
         session = await self._get_session()
+        resource = endpoint.split("/")[1] if "/" in endpoint else "default"
 
         return await self._request_with_retries(
-            session, url, params, max_retries
+            session, url, params, max_retries, resource=resource
         )
 
     async def _fetch_matches(

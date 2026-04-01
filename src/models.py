@@ -39,6 +39,20 @@ class TZDateTime(TypeDecorator):
         return datetime.fromisoformat(value)
 
 
+class RateLimitState(SQLModel, table=True):
+    """Persistent rate-limit state for PandaScore API.
+    
+    Tracks remaining quota and reset time to avoid hitting
+    hard rate limits. One row per resource (game endpoint).
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    resource: str = Field(index=True, unique=True)  # e.g. "lol", "csgo"
+    remaining: int = Field(default=1000)
+    limit: int = Field(default=1000)
+    reset_at: Optional[datetime] = Field(default=None, sa_column=Column(TZDateTime))
+    updated_at: datetime = Field(default_factory=_now_utc, sa_column=Column(TZDateTime))
+
+
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     discord_id: str = Field(index=True, unique=True)
