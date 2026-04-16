@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- markdownlint-disable -->
 
+## [v1.4] - 2026-04-16
+
+### Added
+
+- Watchlist: per-user bookmark support via new `user_watchlist` table and model (`src/models.py`, migration `alembic/versions/d9f7a6b5c4e3_add_user_watchlist.py`).
+- `/watch` slash command: add/remove/list bookmarks (`src/commands/watch.py`).
+- `/catchup` command: spoilered catchup list and `Mark as Watched` interactive action (`src/commands/catchup.py`).
+- DM reminders: scheduler job to DM users when bookmarked matches start (`src/watchlist_reminder.py`, scheduled in `src/scheduler.py`).
+
+### Changed
+
+- Internal: Added CRUD helpers for watchlist and async variants (`src/crud/watchlist.py`).
+- Tests: Added unit tests for watchlist CRUD and catchup flows (`tests/test_watchlist.py`).
+
+### Fixed
+
+- Resolved an accidental package collision by consolidating models into `src/models.py` (removed stray `src/models/` package).
+
+
 ## [v1.3] - 2026-04-16
 
 ### Added
