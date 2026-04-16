@@ -143,6 +143,7 @@ class GuildConfig(SQLModel, table=True):
     guild_id: int = Field(index=True, unique=True)
     announcement_channel_id: Optional[int] = Field(default=None)
     live_updates_channel_id: Optional[int] = Field(default=None)
+    reminder_channel_id: Optional[int] = Field(default=None)
     setup_completed: bool = Field(default=False)
     enabled_games: Optional[str] = Field(default=None)  # comma-separated slugs
 
