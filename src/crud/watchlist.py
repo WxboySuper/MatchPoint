@@ -56,3 +56,32 @@ async def list_watchers_for_match_async(session: AsyncSession, match_id: int) ->
     stmt = select(UserWatchlist).where(UserWatchlist.match_id == match_id)
     res = await session.exec(stmt)
     return res.all()
+
+
+# Async write helpers
+async def add_watch_async(session: AsyncSession, user_id: str, match_id: int, team_id: Optional[int] = None) -> UserWatchlist:
+    """Async variant to create a new watchlist entry."""
+    rec = UserWatchlist(user_id=user_id, match_id=match_id, team_id=team_id)
+    session.add(rec)
+    await session.commit()
+    await session.refresh(rec)
+    return rec
+
+
+async def remove_watch_async(session: AsyncSession, watch_id: int) -> bool:
+    rec = await session.get(UserWatchlist, watch_id)
+    if rec is None:
+        return False
+    await session.delete(rec)
+    await session.commit()
+    return True
+
+
+async def mark_as_watched_async(session: AsyncSession, watch_id: int) -> Optional[UserWatchlist]:
+    rec = await session.get(UserWatchlist, watch_id)
+    if rec is None:
+        return None
+    rec.is_watched = True
+    await session.commit()
+    await session.refresh(rec)
+    return rec
