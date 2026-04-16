@@ -41,6 +41,7 @@ async def test_channel_reminder_sent_to_configured_guild(async_session_for_engin
 
         # User watches this match
         w = add_watch(session, str(user.discord_id), match.id)
+        user_discord_id = user.discord_id
 
         # Create a guild config with reminder_channel_id set
         gc_crud.upsert_guild_config(session, guild_id=111, reminder_channel_id=222)
@@ -52,7 +53,7 @@ async def test_channel_reminder_sent_to_configured_guild(async_session_for_engin
     guild = MagicMock()
     guild.id = 111
     # Simulate that the user is a member of this guild
-    guild.get_member.return_value = MagicMock(id=int(user.discord_id))
+    guild.get_member.return_value = MagicMock(id=int(user_discord_id))
 
     # Ensure channel resolution works: bot.get_channel -> channel, fetch_channel -> channel
     mock_bot = MagicMock()
