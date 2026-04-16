@@ -71,6 +71,19 @@ def start_scheduler():
         )
         logger.info("Added 'update_upcoming_live_messages_job' to scheduler.")
 
+        # Send DM reminders to users who have watchlist entries for upcoming matches
+        from src.watchlist_reminder import send_watchlist_reminders_job
+
+        scheduler.add_job(
+            send_watchlist_reminders_job,
+            "interval",
+            minutes=1,
+            id="send_watchlist_reminders_job",
+            replace_existing=True,
+            kwargs={"reminder_window_minutes": 15},
+        )
+        logger.info("Added 'send_watchlist_reminders_job' to scheduler.")
+
         scheduler.start()
         logger.info("Scheduler started.")
     else:
