@@ -49,9 +49,9 @@ Milestones are scoped for fast, incremental releases. Each milestone below maps 
 
 **Estimate:** 1–3 weeks.
 
-### v1.2 — Refactor & Hardening (Milestone A)
+### v1.2/v1.3 — Refactor, Hardening & CS2 (Released)
 
-**Goal:** provide a reusable adapter and harden polling.
+**Goal:** provide a reusable adapter, harden polling, and deliver CS2 support.
 
 **Checklist:**
 
@@ -65,25 +65,13 @@ Milestones are scoped for fast, incremental releases. Each milestone below maps 
 
 - Add fixtures and mocked PandaScore responses; extend unit/integration tests and CI to run them.
 
-**Acceptance:** no regressions vs v1.0; CI passing; documented rollback path.
-
-**Estimate:** 2–4 weeks.
-
-### v1.3 — CS2 (Counter-Strike)
-
-**Goal:** CS2 MVP using the adapter template.
-
-**Checklist:**
-
-- Implement `parsers/cs2.py` following the adapter interface.
-
-- Add per-title configuration and enable flag.
+- Implement `parsers/cs2.py` and wire CS2 into sync/polling/notification flows; add per-title configuration and tests.
 
 - Apply DB/Alembic migrations for map/series fields if required.
 
-- Add recorded fixtures and tests.
+**Acceptance:** CS2 parser merged and enabled; no regressions; CI passing; documented rollback path.
 
-**Estimate:** 1–3 weeks (CS2 may need extra work for map/series parsing).
+**Estimate:** 2–4 weeks (combined).
 
 ### v1.4 — Fan Experience: Watchlist & Catchup (feature)
 

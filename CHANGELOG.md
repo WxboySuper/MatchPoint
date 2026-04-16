@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- markdownlint-disable -->
 
+## [v1.3] - 2026-04-16
+
+### Added
+
+- Release consolidation: v1.2 and v1.3 combined; CS2 parser stabilized and merged into main (`src/parsers/cs2.py`).
+
+### Changed
+
+- Roadmap updated to reflect the combined v1.2/v1.3 release and CS2 availability.
+
 ## [v1.2] - 2026-03-11
 
 ### Added
