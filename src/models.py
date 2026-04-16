@@ -157,3 +157,17 @@ class LiveUpdateMessage(SQLModel, table=True):
     last_rendered_at: Optional[datetime] = Field(
         default=None, sa_column=Column(TZDateTime(), nullable=True)
     )
+
+
+class UserWatchlist(SQLModel, table=True):
+    """User watchlist entries for matches.
+
+    Minimal schema to support per-user bookmarks for upcoming matches.
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True)
+    match_id: Optional[int] = Field(default=None, index=True)
+    team_id: Optional[int] = Field(default=None)
+    is_watched: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=_now_utc, sa_column=Column(TZDateTime(), nullable=False))
