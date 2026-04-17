@@ -72,16 +72,18 @@ async def _gather_finished_watches(session, user_id: str):
     res = await session.exec(stmt)
     matches_map = {m.pandascore_id: m for m in res.all()}
 
+    def _is_match_finished(match):
+        return bool(
+            getattr(match, "result", None)
+            or getattr(match, "status", None) == "finished"
+        )
+
     finished = []
     for w in pending:
         match = matches_map.get(w.match_id)
         if not match:
             continue
-        # Consider a match finished if a Result exists or status == 'finished'
-        if (
-            getattr(match, "result", None)
-            or getattr(match, "status", None) == "finished"
-        ):
+        if _is_match_finished(match):
             score = (
                 getattr(match.result, "score", None)
                 if getattr(match, "result", None)
