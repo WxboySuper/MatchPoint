@@ -2,8 +2,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from typing import Optional
+import logging
 
 from src.db import get_async_session
+
+logger = logging.getLogger(__name__)
 from src.crud.watchlist import (
     add_watch_async,
     list_watches_for_user_async,
@@ -26,6 +29,7 @@ async def add(interaction: discord.Interaction, match_id: int):
             rec = await add_watch_async(session, str(interaction.user.id), match_id)
         await interaction.followup.send(f"Added match {match_id} to your watchlist (id={rec.id}).", ephemeral=True)
     except Exception:
+        logger.exception("Failed to add watchlist entry for user %s", getattr(interaction.user, "id", None))
         await interaction.followup.send("Failed to add watchlist entry.", ephemeral=True)
 
 
@@ -41,6 +45,7 @@ async def remove(interaction: discord.Interaction, watch_id: int):
         else:
             await interaction.followup.send(f"No watchlist entry {watch_id} found.", ephemeral=True)
     except Exception:
+        logger.exception("Failed to remove watchlist entry %s", watch_id)
         await interaction.followup.send("Failed to remove watchlist entry.", ephemeral=True)
 
 
@@ -53,12 +58,15 @@ async def list_watches(interaction: discord.Interaction):
     try:
         async with get_async_session() as session:
             rows = await list_watches_for_user_async(session, str(interaction.user.id))
+        # Filter out entries already marked as watched
+        rows = [r for r in rows if not getattr(r, 'is_watched', False)]
         if not rows:
             await interaction.followup.send("Your watchlist is empty.", ephemeral=True)
             return
         lines = [f"id={r.id} match={r.match_id} added={getattr(r, 'created_at', None)}" for r in rows]
         await interaction.followup.send("\n".join(lines), ephemeral=True)
     except Exception:
+        logger.exception("Failed to list watchlist entries for user %s", getattr(interaction.user, 'id', None))
         await interaction.followup.send("Failed to list watchlist entries.", ephemeral=True)
 
 

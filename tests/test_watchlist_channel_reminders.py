@@ -40,7 +40,7 @@ async def test_channel_reminder_sent_to_configured_guild(async_session_for_engin
         )
 
         # User watches this match
-        w = add_watch(session, str(user.discord_id), match.id)
+        _ = add_watch(session, str(user.discord_id), match.id)
         user_discord_id = user.discord_id
 
         # Create a guild config with reminder_channel_id set

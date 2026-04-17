@@ -5,7 +5,11 @@ from typing import List
 
 from src.db import get_async_session
 from src.crud.watchlist import list_watches_for_user_async, mark_as_watched_async
-from src.crud.match import get_match_by_pandascore_id
+from sqlmodel import select
+from src.models import Match
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class _MarkWatchedButton(ui.Button):
@@ -18,10 +22,17 @@ class _MarkWatchedButton(ui.Button):
         try:
             async with get_async_session() as session:
                 rec = await mark_as_watched_async(session, self.watch_id)
+            if rec is None:
+                await interaction.followup.send(
+                    f"Watch entry {self.watch_id} was not found or already removed.",
+                    ephemeral=True,
+                )
+                return
             self.disabled = True
             await interaction.message.edit(view=self.view)
             await interaction.followup.send(f"Marked watch entry {self.watch_id} as watched.", ephemeral=True)
         except Exception:
+            logger.exception("Failed to mark as watched for %s", self.watch_id)
             await interaction.followup.send("Failed to mark as watched.", ephemeral=True)
 
 
@@ -34,13 +45,20 @@ class CatchupView(ui.View):
 
 async def _gather_finished_watches(session, user_id: str):
     rows = await list_watches_for_user_async(session, user_id)
+    # Filter out already marked and entries without a pandascore match id
+    pending = [w for w in rows if not getattr(w, "is_watched", False) and getattr(w, "match_id", None)]
+    if not pending:
+        return []
+
+    ids = [w.match_id for w in pending]
+    # Batch load matches to avoid N+1 queries
+    stmt = select(Match).where(Match.pandascore_id.in_(ids))
+    res = await session.exec(stmt)
+    matches_map = {m.pandascore_id: m for m in res.all()}
+
     finished = []
-    for w in rows:
-        if w.is_watched:
-            continue
-        if not w.match_id:
-            continue
-        match = await get_match_by_pandascore_id(session, w.match_id)
+    for w in pending:
+        match = matches_map.get(w.match_id)
         if not match:
             continue
         # Consider a match finished if a Result exists or status == 'finished'

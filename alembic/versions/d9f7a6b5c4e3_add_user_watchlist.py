@@ -7,7 +7,6 @@ Create Date: 2026-04-16
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.sql import func
 
 revision = "d9f7a6b5c4e3"
 down_revision = "f4e5d6c7b8a9"

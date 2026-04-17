@@ -42,14 +42,19 @@ def test_watchlist_crud_happy_path(local_session: Session):
         ),
     )
 
-    # Add watch
-    w = add_watch(local_session, str(user.discord_id), match.id)
+    # Add watch (use pandascore_id for watchlist consistency)
+    match.pandascore_id = 999001
+    local_session.add(match)
+    local_session.commit()
+    local_session.refresh(match)
+
+    w = add_watch(local_session, str(user.discord_id), match.pandascore_id)
     assert w.id is not None
 
     # List
     listings = list_watches_for_user(local_session, str(user.discord_id))
     assert len(listings) == 1
-    assert listings[0].match_id == match.id
+    assert listings[0].match_id == match.pandascore_id
 
     # Mark as watched
     updated = mark_as_watched(local_session, w.id)
