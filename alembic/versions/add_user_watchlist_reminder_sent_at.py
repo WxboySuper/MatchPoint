@@ -29,7 +29,9 @@ def upgrade():
 
     op.add_column(
         "user_watchlist",
-        sa.Column("reminder_sent_at", sa.TIMESTAMP(timezone=True), nullable=True),
+        sa.Column(
+            "reminder_sent_at", sa.TIMESTAMP(timezone=True), nullable=True
+        ),
     )
 
 

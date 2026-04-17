@@ -171,5 +171,10 @@ class UserWatchlist(SQLModel, table=True):
     match_id: int = Field(index=True)
     team_id: Optional[int] = Field(default=None)
     is_watched: bool = Field(default=False)
-    reminder_sent_at: Optional[datetime] = Field(default=None, sa_column=Column(TZDateTime(), nullable=True))
-    created_at: datetime = Field(default_factory=_now_utc, sa_column=Column(TZDateTime(), nullable=False))
+    reminder_sent_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(TZDateTime(), nullable=True)
+    )
+    created_at: datetime = Field(
+        default_factory=_now_utc,
+        sa_column=Column(TZDateTime(), nullable=False),
+    )

@@ -4,7 +4,12 @@ from datetime import datetime, timezone
 from sqlmodel import SQLModel, Session, create_engine
 
 from src import crud
-from src.crud.watchlist import add_watch, list_watches_for_user, remove_watch, mark_as_watched
+from src.crud.watchlist import (
+    add_watch,
+    list_watches_for_user,
+    remove_watch,
+    mark_as_watched,
+)
 
 
 @pytest.fixture()

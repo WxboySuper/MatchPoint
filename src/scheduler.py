@@ -21,9 +21,9 @@ def start_scheduler():
 
     if not getattr(scheduler, "running", False):
         logger.info("Scheduler not running. Starting jobs...")
-        # Schedule sync jobs for each configured default game. For
-        # backward-compatibility keep the legacy job id 'sync_pandascore_job'
-        # pointing to the first/default game.
+        # Schedule sync jobs for each configured default game.
+        # For backward-compatibility, keep the legacy job id
+        # 'sync_pandascore_job' pointing to the first/default game.
         default_games = DEFAULT_GAMES or ["lol"]
         first_game = default_games[0]
         scheduler.add_job(
@@ -71,7 +71,8 @@ def start_scheduler():
         )
         logger.info("Added 'update_upcoming_live_messages_job' to scheduler.")
 
-        # Send DM reminders to users who have watchlist entries for upcoming matches
+        # Send DM reminders to users who have watchlist entries
+        # for upcoming matches
         from src.watchlist_reminder import send_watchlist_reminders_job
 
         scheduler.add_job(

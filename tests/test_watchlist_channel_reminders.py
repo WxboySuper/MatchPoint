@@ -12,7 +12,9 @@ from src.bot_instance import set_bot_instance
 
 
 @pytest.mark.asyncio
-async def test_channel_reminder_sent_to_configured_guild(async_session_for_engine):
+async def test_channel_reminder_sent_to_configured_guild(
+    async_session_for_engine,
+):
     engine = create_engine("sqlite:///:memory:")
     SQLModel.metadata.create_all(engine)
 
@@ -34,17 +36,24 @@ async def test_channel_reminder_sent_to_configured_guild(async_session_for_engin
                 contest_id=contest.id,
                 team1="A",
                 team2="B",
-                scheduled_time=datetime.now(timezone.utc) + timedelta(minutes=10),
+                scheduled_time=datetime.now(timezone.utc)
+                + timedelta(minutes=10),
                 leaguepedia_id="m1",
             ),
         )
+        # Ensure the match has a pandascore_id for watchlist matching
+        match.pandascore_id = 5001
+        session.add(match)
+        session.commit()
 
-        # User watches this match
-        _ = add_watch(session, str(user.discord_id), match.id)
+        # User watches this match (use the external pandascore id)
+        _ = add_watch(session, str(user.discord_id), match.pandascore_id)
         user_discord_id = user.discord_id
 
         # Create a guild config with reminder_channel_id set
-        gc_crud.upsert_guild_config(session, guild_id=111, reminder_channel_id=222)
+        gc_crud.upsert_guild_config(
+            session, guild_id=111, reminder_channel_id=222
+        )
 
     # Prepare a mocked bot with a guild that contains the user and a channel
     mock_channel = AsyncMock()
@@ -55,7 +64,8 @@ async def test_channel_reminder_sent_to_configured_guild(async_session_for_engin
     # Simulate that the user is a member of this guild
     guild.get_member.return_value = MagicMock(id=int(user_discord_id))
 
-    # Ensure channel resolution works: bot.get_channel -> channel, fetch_channel -> channel
+    # Ensure channel resolution works:
+    # bot.get_channel -> channel, fetch_channel -> channel
     mock_bot = MagicMock()
     mock_bot.guilds = [guild]
     mock_bot.get_channel = MagicMock(return_value=mock_channel)
@@ -70,8 +80,11 @@ async def test_channel_reminder_sent_to_configured_guild(async_session_for_engin
         "get_async_session",
         return_value=async_session_for_engine(engine),
     ):
-        # Run the reminder job (it should find the upcoming match and send to channel)
-        await watchlist_reminder.send_watchlist_reminders_job(reminder_window_minutes=15)
+        # Run the reminder job. It should find the upcoming match
+        # and send to channel.
+        await watchlist_reminder.send_watchlist_reminders_job(
+            reminder_window_minutes=15
+        )
 
     # Assert the channel was used for delivery
     assert mock_channel.send.await_count >= 1

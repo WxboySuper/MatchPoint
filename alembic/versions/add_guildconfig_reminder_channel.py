@@ -49,5 +49,8 @@ def downgrade():
         if "reminder_channel_id" in cols:
             indexes = {i["name"] for i in inspector.get_indexes("guildconfig")}
             if "ix_guildconfig_reminder_channel_id" in indexes:
-                op.drop_index("ix_guildconfig_reminder_channel_id", table_name="guildconfig")
+                op.drop_index(
+                    "ix_guildconfig_reminder_channel_id",
+                    table_name="guildconfig",
+                )
             op.drop_column("guildconfig", "reminder_channel_id")
