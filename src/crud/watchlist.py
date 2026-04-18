@@ -5,8 +5,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.models import UserWatchlist
 
-
 # Synchronous helpers
+
 
 def _make_watch(
     user_id: str,
@@ -23,6 +23,31 @@ def _set_watched_flag(rec: UserWatchlist) -> UserWatchlist:
     return rec
 
 
+def _add_watch_sync(
+    session: Session,
+    user_id: str,
+    match_id: int,
+    team_id: Optional[int] = None,
+) -> UserWatchlist:
+    rec = _make_watch(user_id, match_id, team_id)
+    session.add(rec)
+    session.commit()
+    session.refresh(rec)
+    return rec
+
+
+def _mark_as_watched_sync(
+    session: Session, watch_id: int
+) -> Optional[UserWatchlist]:
+    rec = session.get(UserWatchlist, watch_id)
+    if rec is None:
+        return None
+    _set_watched_flag(rec)
+    session.commit()
+    session.refresh(rec)
+    return rec
+
+
 def add_watch(
     session: Session,
     user_id: str,
@@ -30,11 +55,7 @@ def add_watch(
     team_id: Optional[int] = None,
 ) -> UserWatchlist:
     """Create a new watchlist entry and return it."""
-    rec = _make_watch(user_id, match_id, team_id)
-    session.add(rec)
-    session.commit()
-    session.refresh(rec)
-    return rec
+    return _add_watch_sync(session, user_id, match_id, team_id)
 
 
 def remove_watch(session: Session, watch_id: int) -> bool:
@@ -63,13 +84,7 @@ def list_watchers_for_match(
 def mark_as_watched(
     session: Session, watch_id: int
 ) -> Optional[UserWatchlist]:
-    rec = session.get(UserWatchlist, watch_id)
-    if rec is None:
-        return None
-    _set_watched_flag(rec)
-    session.commit()
-    session.refresh(rec)
-    return rec
+    return _mark_as_watched_sync(session, watch_id)
 
 
 # Async helpers for runtime code paths
@@ -89,6 +104,31 @@ async def list_watchers_for_match_async(
     return res.all()
 
 
+async def _add_watch_async(
+    session: AsyncSession,
+    user_id: str,
+    match_id: int,
+    team_id: Optional[int] = None,
+) -> UserWatchlist:
+    rec = _make_watch(user_id, match_id, team_id)
+    session.add(rec)
+    await session.commit()
+    await session.refresh(rec)
+    return rec
+
+
+async def _mark_as_watched_async(
+    session: AsyncSession, watch_id: int
+) -> Optional[UserWatchlist]:
+    rec = await session.get(UserWatchlist, watch_id)
+    if rec is None:
+        return None
+    _set_watched_flag(rec)
+    await session.commit()
+    await session.refresh(rec)
+    return rec
+
+
 # Async write helpers
 async def add_watch_async(
     session: AsyncSession,
@@ -97,11 +137,7 @@ async def add_watch_async(
     team_id: Optional[int] = None,
 ) -> UserWatchlist:
     """Async variant to create a new watchlist entry."""
-    rec = _make_watch(user_id, match_id, team_id)
-    session.add(rec)
-    await session.commit()
-    await session.refresh(rec)
-    return rec
+    return await _add_watch_async(session, user_id, match_id, team_id)
 
 
 async def remove_watch_async(session: AsyncSession, watch_id: int) -> bool:
@@ -116,10 +152,4 @@ async def remove_watch_async(session: AsyncSession, watch_id: int) -> bool:
 async def mark_as_watched_async(
     session: AsyncSession, watch_id: int
 ) -> Optional[UserWatchlist]:
-    rec = await session.get(UserWatchlist, watch_id)
-    if rec is None:
-        return None
-    _set_watched_flag(rec)
-    await session.commit()
-    await session.refresh(rec)
-    return rec
+    return await _mark_as_watched_async(session, watch_id)
