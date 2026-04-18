@@ -76,15 +76,18 @@ async def _fetch_channel_safe(bot, channel_id, guild_id):
         return None
 
 
-async def _send_channel_message(session, channel, match, watches, guild_id):
-    lines: List[str] = []
-    for w in watches:
-        lines.append(
-            (
-                f"<@{w.user_id}> — match {match.team1} vs {match.team2} "
-                f"at {match.scheduled_time} (watch id: {w.id})"
-            )
+async def _send_channel_message(session, channel, match, watches):
+    """Send a single channel message for the provided watches and mark them.
+
+    Guild id is inferred from the channel when available (used for logging).
+    """
+    lines: List[str] = [
+        (
+            f"<@{w.user_id}> — match {match.team1} vs {match.team2} "
+            f"at {match.scheduled_time} (watch id: {w.id})"
         )
+        for w in watches
+    ]
     text = "\n".join(lines)
     try:
         await channel.send(text)
@@ -93,6 +96,12 @@ async def _send_channel_message(session, channel, match, watches, guild_id):
             w.reminder_sent_at = now
         await session.commit()
     except Exception:
+        guild_id = None
+        try:
+            guild = getattr(channel, "guild", None)
+            guild_id = getattr(guild, "id", None) if guild else None
+        except Exception:
+            guild_id = None
         logger.exception(
             "Failed to send channel reminders for guild %s", guild_id
         )
@@ -111,7 +120,7 @@ async def _send_channel_reminders(session, bot, match, guild_data):
         )
         if not channel:
             continue
-        await _send_channel_message(session, channel, match, watches, guild_id)
+        await _send_channel_message(session, channel, match, watches)
 
 
 async def _send_dm_reminders(session, bot, match, dm_watchers):

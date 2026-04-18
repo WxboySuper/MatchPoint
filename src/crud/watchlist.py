@@ -7,6 +7,22 @@ from src.models import UserWatchlist
 
 
 # Synchronous helpers
+
+def _make_watch(
+    user_id: str,
+    match_id: int,
+    team_id: Optional[int] = None,
+) -> UserWatchlist:
+    """Construct a UserWatchlist instance (no DB side-effects)."""
+    return UserWatchlist(user_id=user_id, match_id=match_id, team_id=team_id)
+
+
+def _set_watched_flag(rec: UserWatchlist) -> UserWatchlist:
+    """Set the watched flag on a record (shared logic)."""
+    rec.is_watched = True
+    return rec
+
+
 def add_watch(
     session: Session,
     user_id: str,
@@ -14,7 +30,7 @@ def add_watch(
     team_id: Optional[int] = None,
 ) -> UserWatchlist:
     """Create a new watchlist entry and return it."""
-    rec = UserWatchlist(user_id=user_id, match_id=match_id, team_id=team_id)
+    rec = _make_watch(user_id, match_id, team_id)
     session.add(rec)
     session.commit()
     session.refresh(rec)
@@ -50,7 +66,7 @@ def mark_as_watched(
     rec = session.get(UserWatchlist, watch_id)
     if rec is None:
         return None
-    rec.is_watched = True
+    _set_watched_flag(rec)
     session.commit()
     session.refresh(rec)
     return rec
@@ -81,7 +97,7 @@ async def add_watch_async(
     team_id: Optional[int] = None,
 ) -> UserWatchlist:
     """Async variant to create a new watchlist entry."""
-    rec = UserWatchlist(user_id=user_id, match_id=match_id, team_id=team_id)
+    rec = _make_watch(user_id, match_id, team_id)
     session.add(rec)
     await session.commit()
     await session.refresh(rec)
@@ -103,7 +119,7 @@ async def mark_as_watched_async(
     rec = await session.get(UserWatchlist, watch_id)
     if rec is None:
         return None
-    rec.is_watched = True
+    _set_watched_flag(rec)
     await session.commit()
     await session.refresh(rec)
     return rec
