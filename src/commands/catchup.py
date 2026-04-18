@@ -55,41 +55,48 @@ class CatchupView(ui.View):
             self.add_item(_MarkWatchedButton(wid))
 
 
-async def _gather_finished_watches(session, user_id: str):
+async def _get_pending_watches(session, user_id: str):
     rows = await list_watches_for_user_async(session, user_id)
-    # Filter out already marked and entries without a pandascore match id
-    pending = [
+    return [
         w
         for w in rows
         if not getattr(w, "is_watched", False) and getattr(w, "match_id", None)
     ]
-    if not pending:
-        return []
 
-    ids = [w.match_id for w in pending]
-    # Batch load matches to avoid N+1 queries
+
+async def _load_matches_map(session, ids):
+    if not ids:
+        return {}
     stmt = select(Match).where(Match.pandascore_id.in_(ids))
     res = await session.exec(stmt)
-    matches_map = {m.pandascore_id: m for m in res.all()}
+    return {m.pandascore_id: m for m in res.all()}
 
-    def _is_match_finished(match):
-        return bool(
-            getattr(match, "result", None)
-            or getattr(match, "status", None) == "finished"
-        )
 
+def _is_match_finished(match):
+    return bool(
+        getattr(match, "result", None)
+        or getattr(match, "status", None) == "finished"
+    )
+
+
+def _extract_score(match):
+    res = getattr(match, "result", None)
+    return getattr(res, "score", None) if res else None
+
+
+async def _gather_finished_watches(session, user_id: str):
+    pending = await _get_pending_watches(session, user_id)
+    if not pending:
+        return []
+    ids = [w.match_id for w in pending]
+    matches_map = await _load_matches_map(session, ids)
     finished = []
     for w in pending:
         match = matches_map.get(w.match_id)
         if not match:
             continue
         if _is_match_finished(match):
-            score = (
-                getattr(match.result, "score", None)
-                if getattr(match, "result", None)
-                else None
-            )
-            finished.append((w, match, score))
+            finished.append((w, match, _extract_score(match)))
     return finished
 
 

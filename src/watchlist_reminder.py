@@ -29,6 +29,22 @@ async def _get_watchers(session, pandascore_id):
     return await list_watchers_for_match_async(session, pandascore_id)
 
 
+def _find_guild_id_for_watcher(bot, guild_configs, watcher):
+    try:
+        user_id_int = int(watcher.user_id)
+    except Exception:
+        return None
+    for guild in bot.guilds:
+        cfg = guild_configs.get(guild.id)
+        if not cfg or not getattr(cfg, "reminder_channel_id", None):
+            continue
+        member = guild.get_member(user_id_int)
+        if member is None:
+            continue
+        return guild.id
+    return None
+
+
 def _partition_watchers(bot, guild_configs, watchers):
     guild_watch_map = {}
     dm_watchers = []
@@ -37,90 +53,88 @@ def _partition_watchers(bot, guild_configs, watchers):
             w, "reminder_sent_at", None
         ):
             continue
-        found_guild_id = None
-        for guild in bot.guilds:
-            cfg = guild_configs.get(guild.id)
-            if not cfg or not getattr(
-                cfg, "reminder_channel_id", None
-            ):
-                continue
-            member = guild.get_member(int(w.user_id))
-            if member is None:
-                continue
-            found_guild_id = guild.id
-            break
-        if found_guild_id:
-            guild_watch_map.setdefault(found_guild_id, []).append(w)
+        gid = _find_guild_id_for_watcher(bot, guild_configs, w)
+        if gid:
+            guild_watch_map.setdefault(gid, []).append(w)
         else:
             dm_watchers.append(w)
     return guild_watch_map, dm_watchers
 
 
-async def _send_channel_reminders(
-    session, bot, match, guild_watch_map, guild_configs
-):
+async def _fetch_channel_safe(bot, channel_id, guild_id):
+    channel = bot.get_channel(channel_id)
+    if channel is not None:
+        return channel
+    try:
+        return await bot.fetch_channel(channel_id)
+    except Exception:
+        logger.exception(
+            "Failed to fetch channel %s for guild %s",
+            channel_id,
+            guild_id,
+        )
+        return None
+
+
+async def _send_channel_message(session, channel, match, watches, guild_id):
+    lines: List[str] = []
+    for w in watches:
+        lines.append(
+            (
+                f"<@{w.user_id}> — match {match.team1} vs {match.team2} "
+                f"at {match.scheduled_time} (watch id: {w.id})"
+            )
+        )
+    text = "\n".join(lines)
+    try:
+        await channel.send(text)
+        now = datetime.now(timezone.utc)
+        for w in watches:
+            w.reminder_sent_at = now
+        await session.commit()
+    except Exception:
+        logger.exception(
+            "Failed to send channel reminders for guild %s", guild_id
+        )
+
+
+async def _send_channel_reminders(session, bot, match, guild_data):
+    guild_watch_map, guild_configs = guild_data
     for guild_id, watches in guild_watch_map.items():
         cfg = guild_configs.get(guild_id)
         if not cfg:
             continue
-        channel = bot.get_channel(cfg.reminder_channel_id)
-        if channel is None:
-            try:
-                channel = await bot.fetch_channel(
-                    cfg.reminder_channel_id
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to fetch channel %s for guild %s",
-                    cfg.reminder_channel_id,
-                    guild_id,
-                )
-                continue
-        lines: List[str] = []
-        for w in watches:
-            lines.append(
-                (
-                    f"<@{w.user_id}> — match {match.team1} vs {match.team2} "
-                    f"at {match.scheduled_time} (watch id: {w.id})"
-                )
-            )
-        text = "\n".join(lines)
-        try:
-            await channel.send(text)
-            now = datetime.now(timezone.utc)
-            for w in watches:
-                w.reminder_sent_at = now
-            await session.commit()
-        except Exception:
-            logger.exception(
-                "Failed to send channel reminders for guild %s",
-                guild_id,
-            )
+        channel = await _fetch_channel_safe(
+            bot,
+            cfg.reminder_channel_id,
+            guild_id,
+        )
+        if not channel:
+            continue
+        await _send_channel_message(session, channel, match, watches, guild_id)
 
 
 async def _send_dm_reminders(session, bot, match, dm_watchers):
     for w in dm_watchers:
         try:
             user = await bot.fetch_user(int(w.user_id))
-            if not user:
-                continue
-            dm_text = (
-                f"Reminder: upcoming match {match.team1} vs {match.team2} "
-                f"starting at {match.scheduled_time} (watch id: {w.id})."
-            )
-            try:
-                await user.send(dm_text)
-                w.reminder_sent_at = datetime.now(timezone.utc)
-                await session.commit()
-            except Exception:
-                logger.exception(
-                    "Failed to send DM to user %s", w.user_id
-                )
         except Exception:
             logger.exception(
-                "Failed to fetch/send DM for user %s",
-                getattr(w, "user_id", None),
+                "Failed to fetch user %s", getattr(w, "user_id", None)
             )
+            continue
+        if not user:
+            continue
+        dm_text = (
+            f"Reminder: upcoming match {match.team1} vs {match.team2} "
+            f"starting at {match.scheduled_time} (watch id: {w.id})."
+        )
+        try:
+            await user.send(dm_text)
+            w.reminder_sent_at = datetime.now(timezone.utc)
+            await session.commit()
+        except Exception:
+            logger.exception("Failed to send DM to user %s", w.user_id)
 
 
 async def send_watchlist_reminders_job(
@@ -178,7 +192,6 @@ async def send_watchlist_reminders_job(
             guild_watch_map, dm_watchers = _partition_watchers(
                 bot, guild_configs, watchers
             )
-            await _send_channel_reminders(
-                session, bot, match, guild_watch_map, guild_configs
-            )
+            guild_data = (guild_watch_map, guild_configs)
+            await _send_channel_reminders(session, bot, match, guild_data)
             await _send_dm_reminders(session, bot, match, dm_watchers)
