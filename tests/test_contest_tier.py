@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from uuid import uuid4
 
 import pytest
 from sqlmodel import SQLModel, create_engine
@@ -66,7 +65,7 @@ def test_lol_parser_extract_contest_data_uses_tournament_tier():
 
 @pytest.mark.asyncio
 async def test_upsert_contest_by_pandascore_persists_tier(tmp_path):
-    db_path = tmp_path / f"contest-tier-{uuid4().hex}.db"
+    db_path = tmp_path / "contest-tier.db"
     sync_engine = create_engine(f"sqlite:///{db_path}")
     SQLModel.metadata.create_all(sync_engine)
     async_engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
