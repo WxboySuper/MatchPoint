@@ -214,5 +214,6 @@ logs/
 # Temporary files
 tmp/
 temp/
+.pytest_tmp/
 docs/personal/*
 TODO.md

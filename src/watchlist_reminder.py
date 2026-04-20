@@ -162,9 +162,7 @@ async def send_watchlist_reminders_job(
     """
     bot = get_bot_instance()
     if bot is None:
-        logger.debug(
-            "No bot instance available; skipping watchlist reminders"
-        )
+        logger.debug("No bot instance available; skipping watchlist reminders")
         return
 
     now = datetime.now(timezone.utc)

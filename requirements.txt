@@ -5,4 +5,3 @@ alembic==1.18.4
 apscheduler
 aiohttp
 aiosqlite
-tenacity
