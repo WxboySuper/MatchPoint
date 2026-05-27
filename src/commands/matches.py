@@ -247,20 +247,26 @@ class DayNavigationView(discord.ui.View):
         self,
         current_date: datetime.date,
         interaction: discord.Interaction,
+        matches: list[Match] | None = None,
     ):
         super().__init__(timeout=180)
         self.current_date = current_date
         self.interaction = interaction
         self.current_page = 1
+        self.matches = matches
 
     async def update_embed(self, interaction: discord.Interaction):
         """Updates the embed with matches for the current date."""
         with get_session() as session:
-            matches = crud.get_matches_by_date(session, self.current_date)
+            if self.matches is None:
+                self.matches = crud.get_matches_by_date(
+                    session, self.current_date
+                )
+
             title = f"Matches for {self.current_date.strftime('%Y-%m-%d')}"
 
             page_size = 10
-            total_pages = (len(matches) + page_size - 1) // page_size
+            total_pages = (len(self.matches) + page_size - 1) // page_size
             self.current_page = (
                 max(1, min(self.current_page, total_pages))
                 if total_pages > 0
@@ -269,7 +275,7 @@ class DayNavigationView(discord.ui.View):
 
             embed = await create_matches_embed(
                 title,
-                matches,
+                self.matches,
                 self.interaction,
                 page_info=(self.current_page, page_size),
             )
@@ -293,6 +299,7 @@ class DayNavigationView(discord.ui.View):
     ):
         self.current_date -= timedelta(days=1)
         self.current_page = 1
+        self.matches = None
         await self.update_embed(interaction)
 
     @discord.ui.button(label="◀️", style=discord.ButtonStyle.primary)
@@ -317,6 +324,7 @@ class DayNavigationView(discord.ui.View):
     ):
         self.current_date += timedelta(days=1)
         self.current_page = 1
+        self.matches = None
         await self.update_embed(interaction)
 
 
@@ -381,7 +389,7 @@ async def view_by_day(interaction: discord.Interaction):
         embed = await create_matches_embed(
             title, matches, interaction, page_info=(1, 10)
         )
-        view = DayNavigationView(current_date, interaction)
+        view = DayNavigationView(current_date, interaction, matches)
 
         # Update button states for the first page
         page_size = 10
