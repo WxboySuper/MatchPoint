@@ -1,3 +1,4 @@
-## 2025-05-12 - Stats Calculation Performance
-**Learning:** The application was fetching all `Pick` objects for a user (potentially thousands) just to count how many were "correct". This is a classic N+1-like issue where data transfer and object hydration overhead dominate.
-**Action:** Always use SQL aggregation (`count()`, `sum()`) for statistics instead of fetching objects to application memory. In this case, it yielded a ~10x speedup for 1000 records.
+## 2023-10-27 - Cache Matches in Pagination Views
+
+**Learning:** Re-querying the database on every page turn in pagination views (e.g., `DayNavigationView`) creates redundant load and significantly impacts performance, especially if the dataset for the view doesn't change during pagination.
+**Action:** When designing or optimizing pagination in `discord.ui.View` components, fetch the necessary results once and cache them within the View instance (e.g., `self.matches`). Reuse this cache for page navigation, and only query the database when the dataset boundaries change (e.g., navigating to a different day).
