@@ -148,22 +148,28 @@ async def enter_result(
             # 1. Create the result
             crud.create_result(session, match_id=match_id, winner=winner)
 
-            # 2. Get all picks for the match
-            picks = crud.list_picks_for_match(session, match_id)
+            # 2. Bulk update all picks for the match to prevent N+1 queries
+            from sqlalchemy import update
+            from src.models import Pick
 
-            updated_picks_count = 0
-            for pick in picks:
-                is_correct = pick.chosen_team == winner
-                pick.is_correct = is_correct
-                if is_correct:
-                    pick.status = "correct"
-                    pick.score = 10  # Award 10 points for a correct pick
-                else:
-                    pick.status = "incorrect"
-                    pick.score = 0
+            # Bulk update correct picks
+            stmt_correct = (
+                update(Pick)
+                .where(Pick.match_id == match_id, Pick.chosen_team == winner)
+                .values(is_correct=True, status="correct", score=10)
+            )
 
-                session.add(pick)
-                updated_picks_count += 1
+            # Bulk update incorrect picks
+            stmt_incorrect = (
+                update(Pick)
+                .where(Pick.match_id == match_id, Pick.chosen_team != winner)
+                .values(is_correct=False, status="incorrect", score=0)
+            )
+
+            res_correct = session.exec(stmt_correct)
+            res_incorrect = session.exec(stmt_incorrect)
+
+            updated_picks_count = res_correct.rowcount + res_incorrect.rowcount
 
             session.commit()
 
