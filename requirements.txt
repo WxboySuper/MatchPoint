@@ -1,5 +1,5 @@
 discord.py==2.7.1
-python-dotenv==1.2.2
+python-dotenv==1.2.3
 sqlmodel==0.0.39
 alembic==1.19.1
 apscheduler
